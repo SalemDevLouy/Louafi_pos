@@ -1,0 +1,9 @@
+--- POS Receipt ---
+Sale ID: 3
+Date: 2026-02-19T17:02:08.441361
+
+Items:
+hadjo x1 @ 34.00 -> 34.00
+
+Total: 35.70
+Thank you for your purchase!

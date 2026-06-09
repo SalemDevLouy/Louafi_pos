@@ -1,0 +1,10 @@
+--- POS Receipt ---
+Sale ID: 8
+Date: 2026-02-19T17:35:05.732640
+
+Items:
+hadjo x1 @ 34.00 -> 34.00
+talal x1 @ 34.00 -> 34.00
+
+Total: 71.40
+Thank you for your purchase!

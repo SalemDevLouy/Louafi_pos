@@ -1,0 +1,9 @@
+--- POS Receipt ---
+Sale ID: 2
+Date: 2026-02-19T16:36:46.212755
+
+Items:
+salem x1 @ 23.00 -> 23.00
+
+Total: 24.15
+Thank you for your purchase!

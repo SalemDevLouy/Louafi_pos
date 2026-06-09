@@ -1,0 +1,109 @@
+/* Modern POS style */
+QWidget { font-family: 'Segoe UI', Roboto, Arial; font-size: 23px; color: #263238 }
+QMainWindow { background: #f7f9fb }
+
+/* Sidebar */
+QFrame#sidebar {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #1a237e, stop:0.5 #283593, stop:1 #1565c0);
+    color: white;
+}
+QFrame#sidebarLogo {
+    background: rgba(255, 235, 235, 0.18);
+}
+QFrame#sidebar QPushButton {
+    background: transparent;
+    color: #cfd8f5;
+    border: none;
+    border-left: 4px solid transparent;
+    text-align: left;
+    padding-left: 20px;
+    margin: 2px 8px;
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: 500;
+}
+QFrame#sidebar QPushButton:hover {
+    background: rgba(255,255,255,0.10);
+    color: white;
+    border-left: 4px solid rgba(255,255,255,0.4);
+}
+QFrame#sidebar QPushButton:pressed {
+    background: rgba(255,255,255,0.15);
+}
+QFrame#sidebar QPushButton[selected="true"] {
+    background: rgba(255,255,255,0.18);
+    color: white;
+    font-weight: 700;
+    border-left: 4px solid #82b1ff;
+}
+
+/* Header */
+QFrame#header { background: transparent; padding: 8px }
+QLabel#appTitle { font-size: 28px; font-weight: 700 }
+QFrame#topBanner { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #1a237e, stop:0.5 #283593, stop:1 #1565c0); }
+
+/* banner label larger */
+QFrame#topBanner QLabel { font-size: 30px; font-weight: 500 }
+
+/* Buttons */
+QPushButton { background: #1976D2; color: white; border-radius: 8px; padding: 10px 14px; font-size: 23px }
+QPushButton[flat="true"] { background: transparent; color: #1976D2 }
+QPushButton:hover { background: #1565C0 }
+
+/* Inputs */
+QLineEdit, QSpinBox { padding: 8px; border: 1px solid #d0d7de; border-radius: 8px; background: white; font-size: 23px }
+
+/* Tables */
+QTableWidget { background: white; border: 1px solid #e1e8ee; gridline-color: #eef3f6; font-size: 22px }
+QTableWidget::item:selected { background: #1a237e; color: white }
+QTableWidget::item:selected:hover { background: #283593; color: white }
+QTableWidget::item { padding: 4px }
+QHeaderView::section { background: #f1f5f9; padding: 8px; font-weight: 700; font-size: 23px }
+QTableWidget { alternate-background-color: #fbfdff }
+
+/* Totals */
+QLabel.total { font-size: 32px; font-weight: 800; color: #0D47A1 }
+QLabel.subtotal { font-size: 24px; color: #37474F }
+
+/* make order summary labels a bit larger */
+QFrame QLabel { font-size: 23px }
+
+/* Summary cards (customers view) */
+QLabel#summary_card {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #2e3b8f, stop:1 #5c6bc0);
+    color: white;
+    border-radius: 10px;
+    padding: 12px;
+    font-weight: 600;
+}
+QLabel#summary_card b { font-size: 26px; display: block; margin-top: 8px; }
+
+/* ── Page titles (H1) ──────────────────────────────────────────────────── */
+QLabel#page_title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #1a237e;
+    padding: 4px 0 8px 0;
+    border-bottom: 2px solid #c3d1f0;
+    margin-bottom: 4px;
+}
+
+/* ── Section headings (H2) inside panels ──────────────────────────────── */
+QLabel#section_title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #283593;
+    padding: 2px 0;
+}
+
+/* ── Sub-section labels (H3) ──────────────────────────────────────────── */
+QLabel#sub_title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #37474f;
+}
+
+/* Customer info block */
+QLabel[objectName="customer_info"] { font-size: 15px }

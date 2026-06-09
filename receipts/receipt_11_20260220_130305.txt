@@ -1,0 +1,9 @@
+--- POS Receipt ---
+Sale ID: 11
+Date: 2026-02-20T13:03:04.961657
+
+Items:
+sabon omo 200g x1 @ 60.00 -> 60.00
+
+Total: 63.00
+Thank you for your purchase!
