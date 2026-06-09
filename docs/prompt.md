@@ -1,18 +1,91 @@
-You are an expert Python/PyQt5 desktop application developer. Build me a complete, production-ready Point of Sale (POS) system for small retail stores that can be sold commercially. The system must be fully functional, visually polished, and ready for packaging as a Windows .exe installer.
+## CONTEXT — READ THIS FULLY BEFORE WRITING ANY CODE
+
+You are a senior Python/PyQt5 engineer helping me build a commercial Point of Sale (POS)
+system for small retail stores in Algeria. This is a multi-session project.
+
+Your job in this conversation is NOT to generate the full project at once.
+Your job is to act as a stateful co-developer:
+- Hold this entire spec in memory as the source of truth
+- When I say "build X", generate ONLY that file — complete, no stubs, no placeholders
+- When I say "next", suggest the logical next file based on the dependency graph below
+- When I share an error, debug it in context of the full spec
+- Never rewrite a completed file unless I explicitly say "rewrite X"
+
+When you finish a file, end with exactly:
+✅ [filename] done — tested interface: [list the functions/classes this file exposes]
+Ready for: [suggested next file]
+
+---
+
+## DEPENDENCY ORDER (build in this sequence)
+
+Phase 1 — Core Foundation
+  1. requirements.txt
+  2. database/db.py
+  3. config.ini (template)
+  4. utils/auth.py
+  5. utils/license.py
+  6. utils/audit.py
+  7. utils/backup.py
+
+Phase 2 — Business Logic (Controllers)
+  8.  controllers/auth_controller.py
+  9.  controllers/product_controller.py
+  10. controllers/sales_controller.py
+  11. controllers/customer_controller.py
+  12. controllers/supplier_controller.py
+  13. controllers/expense_controller.py
+  14. controllers/discount_controller.py
+  15. controllers/report_controller.py
+
+Phase 3 — Utilities
+  16. utils/pdf.py
+  17. utils/receipt.py
+  18. utils/barcode.py
+  19. utils/lang.py + utils/tr.py
+  20. utils/icons.py
+  21. utils/categories.py
+  22. lang/ar.json + lang/fr.json
+
+Phase 4 — UI Shell
+  23. styles.qss
+  24. main.py
+  25. views/login_view.py
+  26. views/main_window.py
+
+Phase 5 — Feature Views
+  27. views/dashboard_view.py
+  28. views/sales_view.py
+  29. views/products_view.py
+  30. views/inventory_view.py
+  31. views/customers_view.py
+  32. views/suppliers_view.py
+  33. views/expenses_view.py
+  34. views/discounts_view.py
+  35. views/reports_view.py
+  36. views/settings_view.py
+  37. views/user_management_view.py
+
+Phase 6 — Packaging
+  38. build.bat
+  39. installer/setup.nsi
+  40. README.md
 
 ---
 
 ## TECH STACK
-- Language: Python 3.10+
-- GUI: PyQt5
-- Database: SQLite (via built-in sqlite3)
-- PDF generation: reportlab
-- Charts/graphs: matplotlib (embedded in PyQt5)
-- Barcode: python-barcode + Pillow
-- Packaging: PyInstaller
-- Installer: NSIS (build script included)
-- Icons: qtawesome
-- Styling: QSS stylesheets
+
+| Layer        | Library                              |
+|--------------|--------------------------------------|
+| GUI          | PyQt5                                |
+| Database     | SQLite via sqlite3                   |
+| PDF          | reportlab + arabic_reshaper + bidi   |
+| Charts       | matplotlib (embedded in PyQt5)       |
+| Barcode gen  | python-barcode + Pillow              |
+| Barcode scan | pyzbar + OpenCV (webcam)             |
+| Auth         | bcrypt                               |
+| Packaging    | PyInstaller + NSIS                   |
+| Icons        | qtawesome                            |
 
 ---
 
@@ -24,8 +97,7 @@ pos_system/
 ├── config.ini
 ├── license.key
 ├── database/
-│   ├── db.py              # init_db, get_connection, migrations
-│   └── migrations/        # versioned SQL migration files
+│   └── db.py
 ├── controllers/
 │   ├── auth_controller.py
 │   ├── product_controller.py
@@ -36,8 +108,8 @@ pos_system/
 │   ├── discount_controller.py
 │   └── report_controller.py
 ├── views/
-│   ├── main_window.py
 │   ├── login_view.py
+│   ├── main_window.py
 │   ├── dashboard_view.py
 │   ├── sales_view.py
 │   ├── products_view.py
@@ -59,244 +131,240 @@ pos_system/
 │   ├── expense.py
 │   └── discount.py
 ├── utils/
-│   ├── auth.py            # password hashing, session management
-│   ├── license.py         # license key validation
-│   ├── barcode.py         # barcode generation + webcam scan
-│   ├── backup.py          # auto backup + restore
-│   ├── pdf.py             # invoice + report PDF generation
-│   ├── receipt.py         # thermal receipt printer support
-│   ├── lang.py            # i18n strings loader
-│   ├── tr.py              # translate() helper
-│   ├── audit.py           # audit log writer
-│   ├── icons.py           # qtawesome icon helper
+│   ├── auth.py
+│   ├── license.py
+│   ├── barcode.py
+│   ├── backup.py
+│   ├── pdf.py
+│   ├── receipt.py
+│   ├── lang.py
+│   ├── tr.py
+│   ├── audit.py
+│   ├── icons.py
 │   └── categories.py
 ├── lang/
-│   ├── ar.json            # Arabic strings
-│   └── fr.json            # French strings
-├── receipts/              # auto-saved receipt PDFs
-├── backups/               # auto-saved .db backups
+│   ├── ar.json
+│   └── fr.json
+├── receipts/
+├── backups/
 ├── assets/
 │   ├── logo.png
 │   └── default_product.png
 ├── installer/
-│   └── setup.nsi          # NSIS installer script
-└── requirements.txt
+│   └── setup.nsi
+├── build.bat
+├── requirements.txt
+└── README.md
 
 ---
 
-## DATABASE SCHEMA
+## DATABASE SCHEMA (db.py must create all of these)
 
-Create all tables with proper foreign keys, indexes, and constraints:
+users
+  id, username, password_hash, role (admin/cashier/supervisor),
+  full_name, is_active, created_at, last_login, must_change_password
 
-### users
-- id, username, password_hash, role (admin/cashier/supervisor), full_name, is_active, created_at, last_login
+products
+  id, name, barcode, barcode_2, category, unit, unit_price_sell,
+  unit_price_buy, unit_price_carton_sell, unit_price_carton_buy,
+  units_per_carton, stock_qty, stock_alert_threshold, supplier_id,
+  image_path, is_active, created_at, updated_at
 
-### products
-- id, name, barcode, barcode_2 (secondary), category, unit (piece/kg/box/carton), unit_price_sell, unit_price_buy, unit_price_carton_sell, unit_price_carton_buy, units_per_carton, stock_qty, stock_alert_threshold, supplier_id, image_path, is_active, created_at, updated_at
+sales
+  id, cashier_id, customer_id, total_amount, discount_id,
+  discount_value, tax_amount, amount_paid, amount_change,
+  payment_method (cash/card/partial), status (completed/refunded),
+  notes, created_at
 
-### sales
-- id, cashier_id, customer_id, total_amount, discount_id, discount_value, tax_amount, amount_paid, amount_change, payment_method (cash/card/partial), status (completed/refunded), notes, created_at
+sale_items
+  id, sale_id, product_id, quantity, unit_type (piece/carton),
+  unit_price, subtotal
 
-### sale_items
-- id, sale_id, product_id, quantity, unit_type (piece/carton), unit_price, subtotal
+customers
+  id, full_name, phone, address, loyalty_points,
+  total_purchases, debt_amount, created_at
 
-### customers
-- id, full_name, phone, address, loyalty_points, total_purchases, debt_amount, created_at
+debt_entries
+  id, customer_id, sale_id, amount, type (debit/credit),
+  notes, created_at
 
-### debt_entries
-- id, customer_id, sale_id, amount, type (debit/credit), notes, created_at
+loyalty_transactions
+  id, customer_id, sale_id, points_earned, points_redeemed,
+  balance_after, created_at
 
-### loyalty_transactions
-- id, customer_id, sale_id, points_earned, points_redeemed, balance_after, created_at
+suppliers
+  id, name, phone, email, address, balance_owed, created_at
 
-### suppliers
-- id, name, phone, email, address, balance_owed, created_at
+purchase_orders
+  id, supplier_id, total_amount, status (pending/received/partial),
+  notes, created_at
 
-### purchase_orders
-- id, supplier_id, total_amount, status (pending/received/partial), notes, created_at
+purchase_order_items
+  id, po_id, product_id, quantity_ordered, quantity_received,
+  unit_price, subtotal
 
-### purchase_order_items
-- id, po_id, product_id, quantity_ordered, quantity_received, unit_price, subtotal
+expenses
+  id, category, description, amount, paid_by, created_at
 
-### expenses
-- id, category, description, amount, paid_by (user_id), created_at
+discounts
+  id, name, type (percentage/fixed/coupon), value, coupon_code,
+  min_purchase, is_active, valid_from, valid_to
 
-### discounts
-- id, name, type (percentage/fixed/coupon), value, coupon_code, min_purchase, is_active, valid_from, valid_to
+audit_log
+  id, user_id, action, table_name, record_id,
+  old_value (JSON), new_value (JSON), created_at
 
-### audit_log
-- id, user_id, action, table_name, record_id, old_value (JSON), new_value (JSON), ip_address, created_at
-
-### settings
-- key, value (store name, logo path, currency, tax rate, receipt footer, language, backup interval, loyalty rate)
+settings
+  key, value
 
 ---
 
-## FEATURES TO IMPLEMENT
+## ARCHITECTURE RULES (enforce in every file)
 
-### 1. Authentication & User Management
-- Splash screen → Login screen with username/password
-- Password hashing with bcrypt
-- Roles: admin (full access), supervisor (no settings/users), cashier (POS only)
-- Session token stored in memory (not disk)
-- Auto-logout after X minutes of inactivity
-- User management screen: create, edit, deactivate users (admin only)
-- Force password change on first login
+1. MVC strictly — views never import from database/, only from controllers/
+2. Every controller function returns a tuple: (bool success, data | error_message)
+3. All DB access goes through database/db.py get_connection()
+4. All blocking operations (PDF, backup, reports) run in QThread
+5. All user-facing strings pass through tr() — never hardcoded
+6. All exceptions are caught, logged to error.log with traceback, never silently swallowed
+7. Passwords: bcrypt only, never stored or logged in plaintext
+8. Config values: always from config.ini via configparser, never hardcoded
+9. Every write operation (create/update/delete) calls audit.log_action() after success
 
-### 2. License System
-- On first launch, show license activation screen
-- License key format: XXXX-XXXX-XXXX-XXXX (16 chars, base encoded)
-- Key encodes: expiry date, max_users, store_id
-- Validate key against local hardware fingerprint (MAC address hash)
-- Show warning 7 days before expiry
-- Graceful lock on expiry (read-only mode, not crash)
+---
 
-### 3. Point of Sale (Sales View)
-- Left panel: product search (by name or barcode), category filter buttons, product grid with image thumbnails
-- Right panel: current cart (item, qty, unit type, price, subtotal), totals section
-- Barcode scanner input: auto-detects fast keystroke input from USB scanner
-- Webcam barcode scan button (OpenCV + pyzbar)
-- Quantity can be typed or +/- buttons
-- Switch unit type per item (piece ↔ carton), price updates automatically
-- Apply discount: select from saved discounts or enter coupon code
-- Payment section: select method (cash/card/partial), enter amount paid, show change
-- Loyalty points: show customer's current points, offer to redeem (1 point = configurable value)
-- Complete sale: save to DB, print/save PDF receipt, update stock, update loyalty points, clear cart
-- Quick customer selector with debt indicator
-- Hold/resume sale (save cart to temp table)
-- Refund mode: select past sale, select items to refund, restock inventory
+## FEATURE SPEC SUMMARY
 
-### 4. Product Management
-- Full CRUD with image upload (stored as path)
-- Dual barcode support (original + generated)
-- Multi-unit pricing: price per piece, price per carton, units per carton
-- Batch stock update (receive goods: enter qty received per product)
-- Import products from Excel/CSV
-- Export product catalog to PDF
-- Print barcode labels (generate barcode image, print sheet)
-- Clone product (duplicate with new name/barcode)
+### Auth & Users
+- Login screen before anything else
+- bcrypt password hashing
+- Roles: admin (all), supervisor (no settings/users), cashier (POS only)
+- Session held in memory only
+- Auto-logout after inactivity timeout from settings
+- Force password change on first login (must_change_password flag)
+- Admin can create/deactivate users, never delete
 
-### 5. Inventory Management
-- Stock levels table with color coding (red = below alert, yellow = near alert, green = ok)
-- Low stock alerts panel on dashboard
-- Stock movement history per product (sales consumed, goods received)
-- Manual stock adjustment with reason (damage, loss, count correction) — logged to audit
-- Filter by category, supplier, stock status
+### License
+- First launch: show activation screen
+- Key format: XXXX-XXXX-XXXX-XXXX encoding expiry + store_id
+- Bind to hardware fingerprint (MAC address hash)
+- 7-day warning before expiry
+- On expiry: read-only mode (no new sales), not crash
 
-### 6. Customer Management
-- Customer list with search, total purchases, debt balance, loyalty points
-- Customer profile: purchase history, debt history, loyalty transaction log
-- Add debt payment: enter amount, reduce debt, log transaction
-- Bulk SMS/WhatsApp export (export list of customers with debt as CSV)
+### POS / Sales View
+- Left: barcode input field (USB scanner auto-detected as fast keystrokes),
+  product search by name, category filter chips, product grid with thumbnails
+- Right: cart table, totals, payment section
+- Per cart item: qty input, unit toggle (piece/carton), price auto-updates
+- Discount: dropdown of active discounts or coupon code input
+- Payment: cash/card/partial, amount paid field, change display
+- Loyalty: show customer points, optional redemption
+- Actions: Complete Sale (F10), Hold Sale, Refund Mode
+- On complete: save sale + items, update stock, update loyalty, generate PDF receipt
 
-### 7. Supplier Management
-- Supplier list with balance owed
-- Purchase Orders: create PO (select supplier, add products + qty + price), save as pending
-- Receive goods: select pending PO, confirm quantities received, update stock, record payment
-- Supplier payment tracking
+### Products
+- CRUD with image upload
+- Dual barcode (original + generated)
+- Multi-unit pricing (piece vs carton)
+- Batch stock update (receiving goods)
+- Import from CSV/Excel, export catalog to PDF
+- Print barcode label sheets
+- Clone product
 
-### 8. Expenses Management
-- Add daily expense with category (rent, utilities, salaries, maintenance, other), description, amount
-- Daily/monthly expense summary
-- Expenses factored into profit reports
+### Inventory
+- Table with stock status color coding (red/yellow/green)
+- Stock movement history per product
+- Manual adjustment with reason (logged to audit)
 
-### 9. Discounts & Promotions
-- Create discount: percentage, fixed amount, or coupon code
-- Set validity date range and minimum purchase
-- Apply at checkout by selecting or entering coupon code
-- Discount usage report
+### Customers
+- List with debt + loyalty summary
+- Profile view: purchase history, debt log, loyalty log
+- Record debt payment
 
-### 10. Reports
-- Daily sales report: total sales, total items sold, payment method breakdown, top products
-- Date range report with matplotlib chart (bar chart by day)
-- Profit report: revenue - cost - expenses = net profit
-- Product performance: best sellers, slow movers
+### Suppliers
+- List with balance owed
+- Purchase Orders: create, receive goods (updates stock)
+- Payment tracking
+
+### Expenses
+- Add expense with category, description, amount
+- Daily/monthly summary view
+- Used in profit calculation in reports
+
+### Discounts
+- Create: percentage, fixed, or coupon code
+- Date range + minimum purchase rules
+- Usage report
+
+### Reports
+- Daily sales summary
+- Date range report with matplotlib bar chart
+- Profit: revenue − cost − expenses
+- Product performance (best/slow sellers)
 - Customer debt summary
-- Export any report to PDF (with store logo and header) and Excel (.xlsx)
-- End-of-day closing report: sales summary + cash drawer reconciliation
+- Export all reports to PDF + Excel (.xlsx)
+- End-of-day closing report
 
-### 11. Settings
-- Store info: name, address, phone, logo
-- Currency symbol, tax rate (optional tax on invoice)
-- Receipt customization: header text, footer text, show/hide tax line
-- Language: Arabic / French (switch without restart)
-- Loyalty program: points per 100 DA spent, point redemption value
-- Auto-backup: interval (daily/weekly), destination folder
-- Theme: light / dark
+### Settings
+- Store info (name, address, phone, logo)
+- Currency symbol, tax rate
+- Receipt header/footer text
+- Language toggle (Arabic/French, no restart needed)
+- Loyalty program rate
+- Auto-backup interval + destination
+- Theme: light/dark
+- Inactivity timeout
 
-### 12. Audit Log
-- Every create/update/delete action logged automatically
-- Log includes: user, timestamp, table, old value (JSON), new value (JSON)
-- Viewable in admin panel with filters (by user, by date, by table)
+### Audit Log
+- Automatic on every controller write operation
+- Viewable in admin panel, filter by user/date/table
 
-### 13. Backup & Restore
-- Auto-backup on app close and on schedule
-- Backup file = timestamped .db copy + config.ini zipped
-- Manual backup button in settings
-- Restore: select backup file → confirm → replace current DB → restart
+### Backup
+- Auto on app close + on schedule from settings
+- Manual button in settings
+- Restore: pick .zip backup → confirm → restart
 
-### 14. PDF Invoice
-Use reportlab to generate:
-- Store logo (top left), store name/address/phone (top right)
-- Invoice number, date, cashier name
-- Items table: name | qty | unit | unit price | subtotal
-- Totals section: subtotal, discount, tax, total paid, change
-- Payment method
+### PDF Invoice (reportlab)
+- Store logo + info header
+- Items table with Arabic text support (arabic_reshaper + bidi)
+- Totals block: subtotal, discount, tax, paid, change
 - Loyalty points earned/redeemed
-- Footer with custom text + "Thank you" message
-- Support Arabic text rendering (using arabic_reshaper + python-bidi)
+- Custom footer
 
-### 15. Thermal Receipt (Optional)
-- Format receipt for 58mm or 80mm thermal printer
-- Use python-escpos for direct printer communication
-- Fallback: save as .txt in receipts/ folder
-
----
-
-## UI/UX REQUIREMENTS
-- RTL layout support (for Arabic)
-- Sidebar navigation with icons (qtawesome)
-- Stacked widget for switching views (no page reload)
-- Consistent QSS stylesheet: dark sidebar, white content area, accent color for buttons
-- Table views use QTableWidget with alternating row colors
-- All destructive actions require confirmation dialog
-- Loading spinners for DB operations > 200ms
-- Keyboard shortcuts: F2 = focus barcode, F5 = new sale, F10 = complete sale, Escape = cancel/back
-- Status bar showing: logged-in user, current time, low stock alert count
-- Responsive to window resize (no fixed pixel layouts)
+### UI Rules
+- RTL layout when language = Arabic
+- Sidebar + stacked widget navigation
+- QSS: dark sidebar, white content, accent color
+- Alternating row colors in all tables
+- Confirm dialog on all destructive actions
+- QThread + loading spinner for ops > 200ms
+- Keyboard shortcuts: F2=barcode focus, F5=new sale, F10=complete, Esc=back
+- Status bar: current user, time, low-stock count
 
 ---
 
-## IMPLEMENTATION RULES
-- Use MVC architecture strictly: views never touch the DB directly
-- All DB operations go through controllers
-- All controllers return (success: bool, data/error: any) tuples
-- Use QThread for any operation that may block the UI (PDF generation, backup, report export)
-- Log all exceptions to a local error.log file with traceback
-- Never store plaintext passwords anywhere
-- Config values read from config.ini via configparser, never hardcoded
-- All user-facing strings go through tr() for localization
-- On first run: create DB, prompt for admin account creation, store settings
+## HOW TO WORK WITH ME
+
+I will give you one instruction at a time, in one of these forms:
+
+  "build requirements.txt"
+  "build database/db.py"
+  "build controllers/sales_controller.py"
+  "next"                         → you suggest and build the next file
+  "error: [paste error]"         → debug without touching other files
+  "rewrite views/sales_view.py"  → full rewrite of that file only
+
+You will respond with the complete file content in a single code block.
+No partial implementations. No "TODO" comments. No "implement this yourself".
+Every function must be fully written.
 
 ---
 
-## DELIVERABLES
-1. Every file listed in the project structure, fully implemented (no placeholder/stub functions)
-2. requirements.txt with pinned versions
-3. build.bat script that runs PyInstaller to produce a single .exe
-4. installer/setup.nsi NSIS script that creates a Windows installer with:
-   - Start menu shortcut
-   - Desktop shortcut
-   - Uninstaller
-   - Auto-detect Python runtime (bundled via PyInstaller)
-5. README.md with: setup instructions, first-run guide, how to change language, how to restore backup
+## START INSTRUCTION
 
----
+Confirm you have read and understood the full spec by responding with:
+1. A one-paragraph summary of the system in your own words
+2. The dependency order (Phase 1 → 6) as a numbered list
+3. The message: "Ready. Tell me which file to build first, or type 'next' to start."
 
-Build this file by file. Start with:
-1. database/db.py (full schema)
-2. utils/auth.py and utils/license.py
-3. main.py and views/login_view.py
-4. Then proceed view by view
-
-After each file, confirm it is complete and ask which file to build next.
+Do not write any code yet.

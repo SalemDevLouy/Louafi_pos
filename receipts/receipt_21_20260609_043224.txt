@@ -1,0 +1,10 @@
+--- POS Receipt ---
+Sale ID: 21
+Date: 2026-06-09T04:32:24.377229
+
+Items:
+tata x1 @ 370.00 -> 370.00
+diole borak el3ayla x1 @ 270.00 -> 270.00
+
+Total: 640.00
+Thank you for your purchase!

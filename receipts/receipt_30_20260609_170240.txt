@@ -1,0 +1,11 @@
+--- POS Receipt ---
+Sale ID: 30
+Date: 2026-06-09T17:02:40.482640
+
+Items:
+tata x1 @ 370.00 -> 370.00
+diole borak el3ayla x2 @ 0.00 -> 0.00
+sabon omo 200g x5 @ 60.00 -> 300.00
+
+Total: 670.00
+Thank you for your purchase!

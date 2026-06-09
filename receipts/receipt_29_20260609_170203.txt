@@ -1,0 +1,10 @@
+--- POS Receipt ---
+Sale ID: 29
+Date: 2026-06-09T17:02:03.907921
+
+Items:
+tata x1 @ 370.00 -> 370.00
+sabon omo 200g x1 @ 60.00 -> 60.00
+
+Total: 430.00
+Thank you for your purchase!

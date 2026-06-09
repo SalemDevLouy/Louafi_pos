@@ -1,0 +1,9 @@
+--- POS Receipt ---
+Sale ID: 37
+Date: 2026-06-09T17:04:54.056484
+
+Items:
+tata x1 @ 370.00 -> 370.00
+
+Total: 370.00
+Thank you for your purchase!

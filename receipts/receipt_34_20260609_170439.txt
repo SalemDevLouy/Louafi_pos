@@ -1,0 +1,10 @@
+--- POS Receipt ---
+Sale ID: 34
+Date: 2026-06-09T17:04:39.452432
+
+Items:
+diole borak el3ayla x1 @ 0.00 -> 0.00
+sabon omo 200g x1 @ 60.00 -> 60.00
+
+Total: 60.00
+Thank you for your purchase!

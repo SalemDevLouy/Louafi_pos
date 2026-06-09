@@ -1,0 +1,9 @@
+--- POS Receipt ---
+Sale ID: 25
+Date: 2026-06-09T05:13:03.670796
+
+Items:
+diole borak el3ayla x1 @ 270.00 -> 270.00
+
+Total: 270.00
+Thank you for your purchase!

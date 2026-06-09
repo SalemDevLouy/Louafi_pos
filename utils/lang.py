@@ -64,3 +64,8 @@ lang_manager = _LangManager()
 def tr(key: str, **kwargs) -> str:
     """Shortcut: translate key in the current language."""
     return lang_manager.tr(key, **kwargs)
+
+
+def set_language(lang: str):
+    """Module-level shortcut to change the active language."""
+    lang_manager.set_language(lang)
