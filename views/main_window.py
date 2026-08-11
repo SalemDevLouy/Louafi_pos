@@ -263,6 +263,21 @@ class MainWindow(QtWidgets.QMainWindow):
         # language support
         lang_manager.lang_changed.connect(self._on_lang_changed)
 
+        # hot-reload support (only used in dev mode)
+        self._view_class_map = {
+            0: ('views.sales_view', 'SalesView'),
+            1: ('views.products_view', 'ProductsView'),
+            2: ('views.inventory_view', 'InventoryView'),
+            3: ('views.reports_view', 'ReportsView'),
+            4: ('views.customers_view', 'CustomersView'),
+            5: ('views.suppliers_view', 'SuppliersView'),
+            6: ('views.expenses_view', 'ExpensesView'),
+            7: ('views.discounts_view', 'DiscountsView'),
+            8: ('views.settings_view', 'SettingsView'),
+            9: ('views.user_management_view', 'UserManagementView'),
+            10: ('views.hidden_dashboard_view', 'HiddenDashboardView'),
+        }
+
     # ── Clock ──────────────────────────────────────────────────────────────
 
     def _update_clock(self):
@@ -405,3 +420,117 @@ class MainWindow(QtWidgets.QMainWindow):
             self.btn_refresh.setToolTip(tr('btn_refresh'))
             self.btn_lang.setText('')
             self.btn_lang.setToolTip(tr('lang_switch_to_ar'))
+
+    # ── Hot-Reload Support (Dev Mode) ──────────────────────────────────────
+
+    def reload_current_view(self, module_name=None):
+        """
+        Rebuild the currently visible view after a file change.
+
+        This is called by the hot-reload system when a view file changes.
+        It recreates the view instance without restarting the app or losing
+        controller state.
+
+        Args:
+            module_name: The module that was reloaded (e.g., 'views.sales_view')
+                        If None, reloads the current view regardless of which module changed.
+        """
+        current_idx = self.stack.currentIndex()
+
+        # Check if the changed module affects the current view
+        if module_name is not None:
+            view_info = self._view_class_map.get(current_idx)
+            if not view_info:
+                return
+            view_module, _ = view_info
+            if module_name != view_module:
+                print(f"[HotReload] Changed module ({module_name}) is not the current view, skipping")
+                return
+
+        print(f"[HotReload] Rebuilding view at index {current_idx}...")
+
+        try:
+            # Get the old widget
+            old_widget = self.stack.widget(current_idx)
+
+            # Create new view instance based on index
+            new_widget = self._create_view_instance(current_idx)
+
+            if new_widget is None:
+                print(f"[HotReload] ✗ Failed to create new view instance")
+                return
+
+            # Replace in stack
+            self.stack.removeWidget(old_widget)
+            self.stack.insertWidget(current_idx, new_widget)
+            self.stack.setCurrentIndex(current_idx)
+
+            # Update instance reference
+            view_attr_map = {
+                0: 'sales_view',
+                1: 'products_view',
+                2: 'inventory_view',
+                3: 'reports_view',
+                4: 'customers_view',
+                5: 'suppliers_view',
+                6: 'expenses_view',
+                7: 'discounts_view',
+                8: 'settings_view',
+                9: 'users_view',
+                10: 'hidden_dashboard',
+            }
+            attr_name = view_attr_map.get(current_idx)
+            if attr_name:
+                setattr(self, attr_name, new_widget)
+
+            # Clean up old widget
+            old_widget.deleteLater()
+
+            # Trigger refresh on the new view
+            refresh_map = {
+                0: lambda: new_widget.refresh_cart(),
+                1: lambda: new_widget.load_products(),
+                2: lambda: new_widget.refresh(),
+                3: lambda: new_widget.generate(),
+                4: lambda: new_widget.refresh_customers(),
+                5: lambda: new_widget.refresh(),
+                6: lambda: new_widget.load(),
+                7: lambda: new_widget.load(),
+                8: None,
+                9: lambda: new_widget.load(),
+                10: lambda: new_widget.refresh(),
+            }
+            refresh_fn = refresh_map.get(current_idx)
+            if refresh_fn:
+                refresh_fn()
+
+            print(f"[HotReload] ✓ View rebuilt successfully!")
+            self.status.showMessage("🔄 View reloaded", 2000)
+
+        except Exception as e:
+            print(f"[HotReload] ✗ Failed to rebuild view:")
+            print(f"[HotReload]   {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
+            self.status.showMessage("⚠ Reload failed - check terminal", 3000)
+
+    def _create_view_instance(self, index):
+        """Create a new instance of the view at the given stack index."""
+        view_constructors = {
+            0: lambda: SalesView(self.sales_controller, self.product_controller),
+            1: lambda: ProductsView(self.product_controller),
+            2: lambda: InventoryView(self.product_controller),
+            3: lambda: ReportsView(),
+            4: lambda: CustomersView(),
+            5: lambda: SuppliersView(self.product_controller),
+            6: lambda: ExpensesView(),
+            7: lambda: DiscountsView(),
+            8: lambda: SettingsView(),
+            9: lambda: UserManagementView(),
+            10: lambda: HiddenDashboardView(),
+        }
+
+        constructor = view_constructors.get(index)
+        if constructor:
+            return constructor()
+        return None
