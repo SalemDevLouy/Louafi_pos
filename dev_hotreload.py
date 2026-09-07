@@ -13,25 +13,27 @@ import sys
 import os
 import importlib
 import traceback
+import threading
 from pathlib import Path
 from typing import Optional, Callable
 
-from PyQt5.QtCore import QObject, pyqtSignal, QTimer
+from PyQt5.QtCore import QObject, pyqtSignal, Qt
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileModifiedEvent
+from watchdog.events import FileSystemEventHandler
 
 
 class HotReloadManager(QObject):
     """Manages file watching and module reloading for development."""
 
-    # Signal emitted when a view module needs to be reloaded
-    reload_requested = pyqtSignal(str)  # module_name
+    # Signal emitted (from any thread) when a view module needs to be reloaded.
+    # Qt handles cross-thread delivery safely to the main thread.
+    reload_requested = pyqtSignal(str)
 
     def __init__(self, watch_dirs=None):
         super().__init__()
         self.watch_dirs = watch_dirs or ['views']
         self.observer = None
-        self._debounce_timers = {}  # path -> QTimer (prevent duplicate reloads)
+        self._debounce_timers: dict[str, threading.Timer] = {}
         self._reload_callback: Optional[Callable] = None
 
     def set_reload_callback(self, callback: Callable[[str], None]):
@@ -42,6 +44,9 @@ class HotReloadManager(QObject):
         """Start watching configured directories for file changes."""
         if self.observer:
             return
+
+        # Wire the signal to the reload logic (runs in main thread via Qt)
+        self.reload_requested.connect(self._do_reload, Qt.QueuedConnection)
 
         handler = _FileChangeHandler(self._on_file_changed)
         self.observer = Observer()
@@ -63,23 +68,20 @@ class HotReloadManager(QObject):
             self.observer = None
 
     def _on_file_changed(self, file_path: str):
-        """Handle file change event with debouncing."""
-        # Debounce: ignore rapid successive changes (editor save quirks)
-        if file_path in self._debounce_timers:
-            timer = self._debounce_timers[file_path]
-            if timer.isActive():
-                return  # Already scheduled
+        """Called from watchdog thread — debounce then emit signal to main thread."""
+        # Cancel any pending debounce timer for this file
+        existing = self._debounce_timers.get(file_path)
+        if existing is not None:
+            existing.cancel()
 
-        # Create debounce timer
-        timer = QTimer()
-        timer.setSingleShot(True)
-        timer.timeout.connect(lambda: self._reload_file(file_path))
-        timer.start(200)  # 200ms debounce
+        # Schedule reload on main thread after 200ms debounce
+        timer = threading.Timer(0.2, lambda: self.reload_requested.emit(file_path))
+        timer.daemon = True
+        timer.start()
         self._debounce_timers[file_path] = timer
 
-    def _reload_file(self, file_path: str):
-        """Reload the changed Python module."""
-        # Convert file path to module name
+    def _do_reload(self, file_path: str):
+        """Reload the changed Python module. Runs in the main thread."""
         path = Path(file_path)
         if not path.suffix == '.py':
             return
@@ -89,20 +91,18 @@ class HotReloadManager(QObject):
             rel_path = path.relative_to(Path.cwd())
             module_name = str(rel_path.with_suffix('')).replace(os.sep, '.')
         except ValueError:
-            # File outside project root
             return
 
         print(f"\n[HotReload] File changed: {file_path}")
         print(f"[HotReload] Reloading module: {module_name}")
 
         try:
-            # Reload the module
             if module_name in sys.modules:
                 module = sys.modules[module_name]
                 importlib.reload(module)
                 print(f"[HotReload] ✓ Module reloaded successfully")
 
-                # Notify the callback to rebuild affected views
+                # Trigger view rebuild (now safely on main thread)
                 if self._reload_callback:
                     self._reload_callback(module_name)
             else:
@@ -115,7 +115,7 @@ class HotReloadManager(QObject):
             print("[HotReload] Keeping previous version. Fix the error and save again.")
 
     def manual_reload_current_view(self):
-        """Manually trigger reload of the currently visible view."""
+        """Manually trigger reload of the currently visible view (Ctrl+R)."""
         print("\n[HotReload] Manual reload triggered (Ctrl+R)")
         if self._reload_callback:
             self._reload_callback(None)  # None = reload current view

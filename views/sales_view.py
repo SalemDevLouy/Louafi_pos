@@ -90,24 +90,24 @@ class _QtyWidget(QWidget):
         super().__init__(parent)
         self._val = value
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(8, 8, 8, 8)
-        lay.setSpacing(3)
+        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setSpacing(2)
 
         self._btn_m = QPushButton('−')
-        self._btn_m.setFixedSize(36, 36)
+        self._btn_m.setFixedSize(24, 24)
         self._btn_m.setStyleSheet(self._BTN)
         self._btn_m.clicked.connect(self._dec)
 
         self._lbl = QLabel(str(value))
         self._lbl.setAlignment(Qt.AlignCenter)
-        self._lbl.setFixedSize(44, 36)
+        self._lbl.setFixedSize(30, 24)
         self._lbl.setStyleSheet(
-            'font-size:16px;font-weight:800;color:#1e293b;background:#fff;'
+            'font-size:13px;font-weight:800;color:#1e293b;background:#fff;'
             'border-top:1.5px solid #cbd5e1;border-bottom:1.5px solid #cbd5e1;'
         )
 
         self._btn_p = QPushButton('+')
-        self._btn_p.setFixedSize(36, 36)
+        self._btn_p.setFixedSize(24, 24)
         self._btn_p.setStyleSheet(self._BTN)
         self._btn_p.clicked.connect(self._inc)
 
@@ -268,9 +268,10 @@ class SalesView(QWidget):
         root = QHBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(16)
-        # left (product browser) = 2 parts  |  right (cart + checkout) = 3 parts
-        root.addWidget(self._build_left(),  2)
-        root.addWidget(self._build_right(), 3)
+        # left (products & search) | middle (customer & cart) | right (checkout)
+        root.addWidget(self._build_left(),   1)
+        root.addWidget(self._build_middle(), 2)
+        root.addWidget(self._build_right(),  1)
 
     # ── Left: compact product browser ─────────────────────────────────────────
 
@@ -298,37 +299,8 @@ class SalesView(QWidget):
         self.barcode_input.returnPressed.connect(self._on_barcode)
         self.barcode_input.textChanged.connect(self._on_search)
 
-        qty_label = QLabel('Qty')
-        qty_label.setStyleSheet('font-size:14px;font-weight:600;color:#475569;')
-        self.qty_spin = QSpinBox()
-        self.qty_spin.setRange(1, 9999)
-        self.qty_spin.setValue(1)
-        self.qty_spin.setFixedSize(80, 48)
-        self.qty_spin.setStyleSheet(
-            'QSpinBox{border:2px solid #cbd5e1;border-radius:10px;'
-            'padding:0 8px;font-size:16px;font-weight:700;background:#fff;}'
-            'QSpinBox:focus{border:2px solid #1a73e8;background:#f0f9ff;}'
-        )
         barcode_row.addWidget(self.barcode_input, 1)
-        barcode_row.addWidget(qty_label)
-        barcode_row.addWidget(self.qty_spin)
         lay.addLayout(barcode_row)
-
-        # Category chips
-        cat_scroll = QScrollArea()
-        cat_scroll.setFixedHeight(52)
-        cat_scroll.setWidgetResizable(True)
-        cat_scroll.setFrameShape(QFrame.NoFrame)
-        cat_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        cat_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        cat_scroll.setStyleSheet('QScrollArea{background:transparent;border:none;}')
-        self._cat_container = QWidget()
-        self._cat_layout = QHBoxLayout(self._cat_container)
-        self._cat_layout.setContentsMargins(0, 4, 0, 4)
-        self._cat_layout.setSpacing(8)
-        self._cat_buttons: list[QPushButton] = []
-        cat_scroll.setWidget(self._cat_container)
-        lay.addWidget(cat_scroll)
 
         # Product grid
         prod_scroll = QScrollArea()
@@ -344,7 +316,19 @@ class SalesView(QWidget):
 
         return panel
 
-    # ── Right: customer card + cart table + checkout ───────────────────────────
+    # ── Middle: customer card + cart table ──────────────────────────────────────
+
+    def _build_middle(self) -> QWidget:
+        panel = QWidget()
+        panel.setStyleSheet('QWidget{background:transparent;}')
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(14)
+        lay.addWidget(self._build_customer_card())
+        lay.addWidget(self._build_cart(), 1)
+        return panel
+
+    # ── Right: checkout panel ───────────────────────────────────────────────────
 
     def _build_right(self) -> QWidget:
         panel = QWidget()
@@ -352,8 +336,6 @@ class SalesView(QWidget):
         lay = QVBoxLayout(panel)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(16)
-        lay.addWidget(self._build_customer_card())
-        lay.addWidget(self._build_cart(), 1)
         lay.addWidget(self._build_checkout())
         return panel
 
@@ -361,76 +343,126 @@ class SalesView(QWidget):
 
     def _build_customer_card(self) -> QFrame:
         card = _card_frame()
-        card.setFixedHeight(96)
-        outer = QHBoxLayout(card)
-        outer.setContentsMargins(18, 14, 18, 14)
-        outer.setSpacing(16)
+        card.setFixedHeight(82)
 
+        outer = QHBoxLayout(card)
+        outer.setContentsMargins(16, 10, 16, 10)
+        outer.setSpacing(12)
+
+        # Avatar
         avatar = QLabel()
-        avatar.setPixmap(qta.icon('fa5s.user-circle', color=_BLUE).pixmap(40, 40))
-        avatar.setFixedSize(40, 40)
+        avatar.setPixmap(
+            qta.icon("fa5s.user-circle", color=_BLUE).pixmap(48, 48)
+        )
+        avatar.setFixedSize(56, 56)
+        avatar.setAlignment(Qt.AlignCenter)
+
+        avatar.setStyleSheet("""
+            QLabel{
+                background:#eff6ff;
+                border-radius:28px;
+            }
+        """)
+
         outer.addWidget(avatar)
 
-        col = QVBoxLayout()
-        col.setSpacing(6)
-        col.setContentsMargins(0, 0, 0, 0)
+        # Customer selector
+        self.cust_combo = QComboBox()
+        self.cust_combo.setFixedHeight(46)
 
-        top = QHBoxLayout()
-        # lbl = QLabel('Customer')
-        # lbl.setStyleSheet(
-        #     f'font-size:10px;font-weight:700;color:{_SLATE};'
-        # )
-        # top.addWidget(lbl)
-        top.addStretch()
+        self.cust_combo.setStyleSheet(f"""
+            QComboBox {{
+                background:white;
+                border:1px solid #dbe3ef;
+                border-radius:12px;
+                padding-left:14px;
+                font-size:14px;
+                font-weight:500;
+            }}
 
+            QComboBox:hover {{
+                border:1px solid {_BLUE};
+            }}
+
+            QComboBox:focus {{
+                border:2px solid {_BLUE};
+            }}
+
+            QComboBox::drop-down {{
+                border:none;
+                width:30px;
+            }}
+        """)
+
+        self.cust_combo.currentIndexChanged.connect(
+            self._on_customer_changed
+        )
+
+        outer.addWidget(self.cust_combo, 1)
+
+        # Reload button
         self.btn_reload_cust = QPushButton()
         self.btn_reload_cust.setIcon(ic.ic_refresh(color=_BLUE))
         self.btn_reload_cust.setIconSize(QtCore.QSize(18, 18))
-        self.btn_reload_cust.setFixedSize(32, 32)
-        self.btn_reload_cust.setToolTip('Reload customers')
-        self.btn_reload_cust.setStyleSheet(
-            'QPushButton{background:#e8f0fe;border-radius:8px;border:none;}'
-            'QPushButton:hover{background:#c5d8fc;}'
-        )
-        self.btn_reload_cust.clicked.connect(self._load_customers)
-        top.addWidget(self.btn_reload_cust)
-        col.addLayout(top)
+        self.btn_reload_cust.setFixedSize(40, 40)
 
-        self.cust_combo = QComboBox()
-        self.cust_combo.setFixedHeight(44)
-        self.cust_combo.setStyleSheet(
-            'QComboBox{border:2px solid #e2e8f0;border-radius:10px;'
-            'padding:0 14px;font-size:14px;background:#fff;}'
-            'QComboBox:focus{border:2px solid #1a73e8;background:#f0f9ff;}'
-            'QComboBox::drop-down{border:none;width:26px;}'
-        )
-        self.cust_combo.currentIndexChanged.connect(self._on_customer_changed)
-        col.addWidget(self.cust_combo)
-        outer.addLayout(col, 1)
+        self.btn_reload_cust.setStyleSheet("""
+            QPushButton{
+                background:#eff6ff;
+                border:none;
+                border-radius:10px;
+            }
 
-        # Debt / loyalty badges
+            QPushButton:hover{
+                background:#dbeafe;
+            }
+        """)
+
+        self.btn_reload_cust.clicked.connect(
+            self._load_customers
+        )
+
+        outer.addWidget(self.btn_reload_cust)
+
+        # Right stats
         stats = QVBoxLayout()
-        stats.setSpacing(6)
-        stats.setAlignment(Qt.AlignVCenter)
+        stats.setSpacing(4)
 
-        self.cust_debt_lbl = QLabel('')
-        self.cust_debt_lbl.setAlignment(Qt.AlignCenter)
-        self.cust_debt_lbl.setStyleSheet(
-            f'background:#fee2e2;color:{_RED};border-radius:10px;'
-            'padding:6px 14px;font-size:13px;font-weight:700;'
-        )
+        self.cust_debt_lbl = QLabel()
         self.cust_debt_lbl.setVisible(False)
+        self.cust_debt_lbl.setAlignment(Qt.AlignCenter)
 
-        self.cust_loyalty_lbl = QLabel('')
-        self.cust_loyalty_lbl.setAlignment(Qt.AlignCenter)
-        self.cust_loyalty_lbl.setStyleSheet(
-            f'background:#eff6ff;color:{_BLUE};border-radius:10px;'
-            'padding:6px 14px;font-size:13px;font-weight:700;'
-        )
+        self.cust_debt_lbl.setStyleSheet("""
+            QLabel{
+                background:#fef2f2;
+                color:#dc2626;
+                border:1px solid #fecaca;
+                border-radius:12px;
+                padding:4px 10px;
+                font-size:11px;
+                font-weight:700;
+            }
+        """)
+
+        self.cust_loyalty_lbl = QLabel()
         self.cust_loyalty_lbl.setVisible(False)
+        self.cust_loyalty_lbl.setAlignment(Qt.AlignCenter)
+
+        self.cust_loyalty_lbl.setStyleSheet("""
+            QLabel{
+                background:#eff6ff;
+                color:#2563eb;
+                border:1px solid #bfdbfe;
+                border-radius:12px;
+                padding:4px 10px;
+                font-size:11px;
+                font-weight:700;
+            }
+        """)
 
         stats.addWidget(self.cust_debt_lbl)
         stats.addWidget(self.cust_loyalty_lbl)
+
         outer.addLayout(stats)
 
         return card
@@ -493,12 +525,12 @@ class SalesView(QWidget):
         hh.setSectionResizeMode(1, QHeaderView.Fixed)
         self.cart_table.setColumnWidth(1, 120)
         hh.setSectionResizeMode(2, QHeaderView.Fixed)
-        self.cart_table.setColumnWidth(2, 130)
+        self.cart_table.setColumnWidth(2, 100)
         hh.setSectionResizeMode(3, QHeaderView.Fixed)
         self.cart_table.setColumnWidth(3, 120)
         hh.setSectionResizeMode(4, QHeaderView.Fixed)
-        self.cart_table.setColumnWidth(4, 52)
-        self.cart_table.verticalHeader().setDefaultSectionSize(64)
+        self.cart_table.setColumnWidth(4, 38)
+        self.cart_table.verticalHeader().setDefaultSectionSize(40)
 
         lay.addWidget(self.cart_table, 1)
         return panel
@@ -742,47 +774,7 @@ class SalesView(QWidget):
 
     def _load_products(self, category: str | None = None):
         self._all_products = self.product_controller.get_all()
-        self._build_category_chips()
-        self._fill_grid(
-            self._all_products if category is None
-            else [p for p in self._all_products if (p.category or '') == category]
-        )
-
-    def _build_category_chips(self):
-        while self._cat_layout.count():
-            w = self._cat_layout.takeAt(0).widget()
-            if w:
-                w.deleteLater()
-        self._cat_buttons.clear()
-
-        categories = ['All'] + sorted({
-            p.category for p in self._all_products if p.category
-        })
-        for cat in categories:
-            btn = QPushButton(cat)
-            btn.setCheckable(True)
-            btn.setFixedHeight(40)
-            btn.setStyleSheet(
-                f'QPushButton{{border:2px solid {_BLUE};color:{_BLUE};'
-                'background:#fff;border-radius:20px;padding:0 18px;'
-                'font-size:14px;font-weight:700;}}'
-                f'QPushButton:hover{{background:#eff6ff;}}'
-                f'QPushButton:checked{{background:{_BLUE};color:#fff;}}'
-            )
-            btn.clicked.connect(lambda _, c=cat: self._on_category(c))
-            self._cat_layout.addWidget(btn)
-            self._cat_buttons.append(btn)
-        self._cat_layout.addStretch()
-        if self._cat_buttons:
-            self._cat_buttons[0].setChecked(True)
-
-    def _on_category(self, category: str):
-        for btn in self._cat_buttons:
-            btn.setChecked(btn.text() == category)
-        products = (self._all_products if category == 'All'
-                    else [p for p in self._all_products if (p.category or '') == category])
-        self.barcode_input.clear()
-        self._fill_grid(products)
+        self._fill_grid(self._all_products)
 
     def _fill_grid(self, products):
         while self._grid_layout.count():
@@ -851,13 +843,12 @@ class SalesView(QWidget):
     # ─────────────────────────────────────────────────────────────────────────
 
     def _add_product(self, product):
-        qty = self.qty_spin.value()
+        qty = 1
         try:
             self.sales_controller.add_barcode_to_cart(product.barcode, qty)
         except Exception as e:
             QMessageBox.warning(self, 'Error', str(e))
             return
-        self.qty_spin.setValue(1)
         self.barcode_input.clear()
         self.refresh_cart()
 
@@ -865,14 +856,13 @@ class SalesView(QWidget):
         code = self.barcode_input.text().strip()
         if not code:
             return
-        qty = self.qty_spin.value()
+        qty = 1
         try:
             self.sales_controller.add_barcode_to_cart(code, qty)
         except Exception as e:
             QMessageBox.warning(self, 'Error', str(e))
             return
         self.barcode_input.clear()
-        self.qty_spin.setValue(1)
         self.refresh_cart()
 
     def _on_search(self, text: str):
@@ -882,8 +872,6 @@ class SalesView(QWidget):
             return
         results = self.product_controller.search(term)
         self._fill_grid(results)
-        for btn in self._cat_buttons:
-            btn.setChecked(btn.text() == 'All')
 
     def _clear_cart(self):
         for item in list(self.sales_controller.cart):
@@ -978,14 +966,15 @@ class SalesView(QWidget):
             sub_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.cart_table.setItem(r, 3, sub_item)
 
-            # Col 4: Delete button
+            # Col 4: Delete button — fills cell naturally, styled flat
             del_btn = QPushButton()
-            del_btn.setIcon(qta.icon('fa5s.times', color=_RED))
+            del_btn.setIcon(qta.icon('fa5s.times', color='#94a3b8'))
             del_btn.setIconSize(QtCore.QSize(16, 16))
-            del_btn.setFixedSize(38, 38)
+            del_btn.setCursor(Qt.PointingHandCursor)
             del_btn.setStyleSheet(
-                'QPushButton{background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;}'
-                'QPushButton:hover{background:#fee2e2;border-color:#ef4444;}'
+                'QPushButton{background:transparent;border:none;border-radius:6px;}'
+                'QPushButton:hover{background:#fee2e2;}'
+                'QPushButton:hover QIcon{color:#ef4444;}'
             )
             del_btn.clicked.connect(
                 lambda _, pid=p.id: self._on_delete(pid)

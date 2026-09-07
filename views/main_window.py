@@ -515,22 +515,35 @@ class MainWindow(QtWidgets.QMainWindow):
             self.status.showMessage("⚠ Reload failed - check terminal", 3000)
 
     def _create_view_instance(self, index):
-        """Create a new instance of the view at the given stack index."""
-        view_constructors = {
-            0: lambda: SalesView(self.sales_controller, self.product_controller),
-            1: lambda: ProductsView(self.product_controller),
-            2: lambda: InventoryView(self.product_controller),
-            3: lambda: ReportsView(),
-            4: lambda: CustomersView(),
-            5: lambda: SuppliersView(self.product_controller),
-            6: lambda: ExpensesView(),
-            7: lambda: DiscountsView(),
-            8: lambda: SettingsView(),
-            9: lambda: UserManagementView(),
-            10: lambda: HiddenDashboardView(),
-        }
+        """Create a new instance of the view at the given stack index.
 
-        constructor = view_constructors.get(index)
-        if constructor:
-            return constructor()
-        return None
+        Uses sys.modules to always get the freshest class (critical for
+        hot-reload: after importlib.reload(), stale top-level imports
+        would otherwise keep using the old class).
+        """
+        import sys
+
+        view_info = self._view_class_map.get(index)
+        if not view_info:
+            return None
+
+        module_name, class_name = view_info
+        mod = sys.modules.get(module_name)
+        if mod is None:
+            return None
+
+        cls = getattr(mod, class_name, None)
+        if cls is None:
+            return None
+
+        # Constructor signatures per view index
+        if index == 0:   # SalesView
+            return cls(self.sales_controller, self.product_controller)
+        elif index == 1: # ProductsView
+            return cls(self.product_controller)
+        elif index == 2: # InventoryView
+            return cls(self.product_controller)
+        elif index == 5: # SuppliersView
+            return cls(self.product_controller)
+        else:
+            return cls()

@@ -69,28 +69,42 @@ def main():
         font_manager.apply(app)
     lang_manager.lang_changed.connect(_on_lang)
 
-    # Show login first; on success swap to main window
-    login_window = QtWidgets.QMainWindow()
-    login_window.setWindowTitle("LouafiPOS — Login (DEV MODE)")
-    login_window.setMinimumSize(480, 560)
+    # ── Dev auto-login: skip login screen entirely ──
+    try:
+        dev_auto = cfg.get('dev', 'auto_login', fallback='false').lower() == 'true'
+    except Exception:
+        dev_auto = False
 
-    def on_login_success(user):
-        login_window.close()
+    if dev_auto:
+        print("\n⚡ AUTO-LOGIN (dev mode): bypassing login screen\n")
         app.setQuitOnLastWindowClosed(True)
         window = MainWindow()
-
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # 🔥 ENABLE HOT-RELOAD HERE 🔥
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         enable_hot_reload(window)
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
         window.showMaximized()
         app._main_window = window
+    else:
+        # Show login first; on success swap to main window
+        login_window = QtWidgets.QMainWindow()
+        login_window.setWindowTitle("LouafiPOS — Login (DEV MODE)")
+        login_window.setMinimumSize(480, 560)
 
-    login_view = LoginView(on_login_success=on_login_success)
-    login_window.setCentralWidget(login_view)
-    login_window.showMaximized()
+        def on_login_success(user):
+            login_window.close()
+            app.setQuitOnLastWindowClosed(True)
+            window = MainWindow()
+
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            # 🔥 ENABLE HOT-RELOAD HERE 🔥
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            enable_hot_reload(window)
+            # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+            window.showMaximized()
+            app._main_window = window
+
+        login_view = LoginView(on_login_success=on_login_success)
+        login_window.setCentralWidget(login_view)
+        login_window.showMaximized()
 
     sys.exit(app.exec_())
 

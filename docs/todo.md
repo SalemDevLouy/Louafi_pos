@@ -1,0 +1,2 @@
+ - remove categories part from products section 
+ - reduce the the width of product section and remove Qty field (is inside search bar)
