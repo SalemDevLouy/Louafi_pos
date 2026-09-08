@@ -61,22 +61,29 @@ def main():
         font_manager.apply(app)
     lang_manager.lang_changed.connect(_on_lang)
 
-    # show login first; on success swap to main window
-    login_window = QtWidgets.QMainWindow()
-    login_window.setWindowTitle("LouafiPOS — Login")
-    login_window.setMinimumSize(480, 560)
-
-    def on_login_success(user):
-        login_window.close()
-        app.setQuitOnLastWindowClosed(True)
+    # show login first; supports logout / change-account cycling
+    def show_main():
         window = MainWindow()
+        window.logged_out.connect(show_login)
         window.showMaximized()
         app._main_window = window
 
-    login_view = LoginView(on_login_success=on_login_success)
-    login_window.setCentralWidget(login_view)
-    login_window.showMaximized()
+    def show_login():
+        login_window = QtWidgets.QMainWindow()
+        login_window.setWindowTitle("LouafiPOS — Login")
+        login_window.setMinimumSize(480, 560)
 
+        def on_login_success(user):
+            login_window.close()
+            app.setQuitOnLastWindowClosed(True)
+            show_main()
+
+        login_view = LoginView(on_login_success=on_login_success)
+        login_window.setCentralWidget(login_view)
+        login_window.showMaximized()
+        app._login_window = login_window
+
+    show_login()
     sys.exit(app.exec_())
 
 

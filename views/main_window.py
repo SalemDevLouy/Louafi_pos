@@ -68,6 +68,10 @@ BREAK_WIDTH    = 900
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    # emitted after the session has been cleared — main.py responds by
+    # showing a fresh login window (logout / change-account flow)
+    logged_out = QtCore.pyqtSignal()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(tr('app_title'))
@@ -187,6 +191,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_refresh.setObjectName('refreshBtn')
         self.btn_refresh.clicked.connect(self._refresh_current_page)
         sb_layout.addWidget(self.btn_refresh)
+
+        # ── Session buttons: change account / logout ───────────────────────
+        self.btn_switch = QtWidgets.QPushButton(f'  {tr("change_account")}')
+        self.btn_switch.setIcon(qta.icon('fa5s.exchange-alt', color=_ICON_COLOR))
+        self.btn_switch.setIconSize(_ICON_SIZE)
+        self.btn_switch.setFixedHeight(42)
+        self.btn_switch.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_switch.setProperty('flat', True)
+        self.btn_switch.clicked.connect(self._change_account)
+        sb_layout.addWidget(self.btn_switch)
+
+        self.btn_logout = QtWidgets.QPushButton(f'  {tr("logout")}')
+        self.btn_logout.setIcon(qta.icon('fa5s.sign-out-alt', color='#f87171'))
+        self.btn_logout.setIconSize(_ICON_SIZE)
+        self.btn_logout.setFixedHeight(42)
+        self.btn_logout.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_logout.setStyleSheet(
+            'QPushButton { color:#f87171; background:transparent; border:none;'
+            '  border-radius:10px; text-align:left; padding:10px 14px;'
+            '  margin:2px 8px; font-size:14px; font-weight:600; }'
+            'QPushButton:hover { background:rgba(239,68,68,0.15); color:#fca5a5; }'
+        )
+        self.btn_logout.clicked.connect(self._logout)
+        sb_layout.addWidget(self.btn_logout)
         sb_layout.addSpacing(8)
 
         # top banner (slim app bar)
@@ -221,6 +249,9 @@ class MainWindow(QtWidgets.QMainWindow):
         _urole = (_sess.get('role') or '') if _sess else ''
         _chip_txt = f'  {_uname} · {_urole}  ' if _urole else f'  {_uname}  '
         user_chip = QtWidgets.QLabel(_chip_txt)
+        user_chip.setCursor(QtCore.Qt.PointingHandCursor)
+        user_chip.setToolTip(tr('change_account'))
+        user_chip.mousePressEvent = lambda _e: self._change_account()
         user_chip.setStyleSheet(
             'color:#ede9fe; background:#6d28d9; border-radius:12px;'
             'padding:4px 10px; font-size:12px; font-weight:600;'
@@ -344,6 +375,30 @@ class MainWindow(QtWidgets.QMainWindow):
                 view.retranslate_ui()
         self.status.showMessage(tr('status_refreshed'), 2000)
 
+    # ── Session: change account / logout ──────────────────────────────────────
+
+    def _change_account(self):
+        """Switch user: clear the session and go straight to the login screen."""
+        self._do_logout(confirm=False)
+
+    def _logout(self):
+        """End the session (with confirmation) and return to the login screen."""
+        self._do_logout(confirm=True)
+
+    def _do_logout(self, confirm: bool):
+        if confirm:
+            reply = QtWidgets.QMessageBox.question(
+                self, tr('logout'), tr('logout_confirm'),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+        from controllers.auth_controller import logout as _do_logout
+        _do_logout()              # clears the session (+ LOGOUT audit entry)
+        self.logged_out.emit()    # main.py shows a fresh login window
+        self.close()              # app stays alive — the login window exists
+
     # ── Navigation ────────────────────────────────────────────────────────
 
     def show_page(self, index: int):
@@ -437,11 +492,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.btn_refresh.setToolTip('')
             self.btn_lang.setText(tr('lang_switch_to_ar'))
             self.btn_lang.setToolTip('')
+            self.btn_switch.setText(f'  {tr("change_account")}')
+            self.btn_switch.setToolTip('')
+            self.btn_logout.setText(f'  {tr("logout")}')
+            self.btn_logout.setToolTip('')
         else:
             self.btn_refresh.setText('')
             self.btn_refresh.setToolTip(tr('btn_refresh'))
             self.btn_lang.setText('')
             self.btn_lang.setToolTip(tr('lang_switch_to_ar'))
+            self.btn_switch.setText('')
+            self.btn_switch.setToolTip(tr('change_account'))
+            self.btn_logout.setText('')
+            self.btn_logout.setToolTip(tr('logout'))
 
     # ── Hot-Reload Support (Dev Mode) ──────────────────────────────────────
 

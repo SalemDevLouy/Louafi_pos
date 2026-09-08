@@ -32,6 +32,13 @@ def login(username: str, password: str) -> tuple[bool, dict | str]:
 
 
 def logout() -> None:
+    # audit: record LOGOUT while the session still exists
+    uid = auth.current_user_id()
+    if uid:
+        try:
+            audit.log_action(uid, "LOGOUT", "auth", uid)
+        except Exception:
+            logger.warning("LOGOUT audit entry failed", exc_info=True)
     auth.clear_session()
 
 

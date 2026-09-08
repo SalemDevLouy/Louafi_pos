@@ -227,6 +227,9 @@ TRANSLATIONS = {
     # ── Login / Auth ──────────────────────────────────────────────────────────
     'login':                {'en': 'Login',             'ar': 'تسجيل الدخول'},
     'logout':               {'en': 'Logout',            'ar': 'تسجيل الخروج'},
+    'change_account':       {'en': 'Change Account',    'ar': 'تبديل الحساب'},
+    'logout_confirm':       {'en': 'Log out and return to the login screen?',
+                             'ar': 'تسجيل الخروج والعودة إلى شاشة الدخول؟'},
     'username':             {'en': 'Username',          'ar': 'اسم المستخدم'},
     'password':             {'en': 'Password',          'ar': 'كلمة المرور'},
     'change_password':      {'en': 'Change Password',   'ar': 'تغيير كلمة المرور'},
