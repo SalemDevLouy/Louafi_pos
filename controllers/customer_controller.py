@@ -100,7 +100,11 @@ class CustomerController:
             'INSERT INTO debt_entries (customer_id, date, amount, note) VALUES (?, ?, ?, ?)',
             (customer_id, date, amount, note),
         )
-        cur.execute('UPDATE customers SET debt = debt + ? WHERE id = ?', (amount, customer_id))
+        cur.execute(
+            'UPDATE customers SET debt = debt + ?, debt_amount = debt_amount + ?'
+            ' WHERE id = ?',
+            (amount, amount, customer_id),
+        )
         conn.commit()
         eid = cur.lastrowid
         conn.close()

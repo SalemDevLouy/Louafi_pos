@@ -53,6 +53,7 @@ def init_db():
             product_id INTEGER NOT NULL,
             quantity INTEGER NOT NULL,
             price REAL NOT NULL,
+            subtotal REAL NOT NULL DEFAULT 0,
             FOREIGN KEY (sale_id) REFERENCES sales(id),
             FOREIGN KEY (product_id) REFERENCES products(id)
         )
@@ -155,6 +156,7 @@ def init_db():
     _migrate(cur, 'ALTER TABLE sales ADD COLUMN amount_paid REAL NOT NULL DEFAULT 0')
     _migrate(cur, 'ALTER TABLE sales ADD COLUMN amount_change REAL NOT NULL DEFAULT 0')
     _migrate(cur, "ALTER TABLE sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash'")
+    _migrate(cur, "UPDATE sales SET payment_method='debt' WHERE payment_method='partial'")
     _migrate(cur, "ALTER TABLE sales ADD COLUMN status TEXT NOT NULL DEFAULT 'completed'")
     _migrate(cur, 'ALTER TABLE sales ADD COLUMN notes TEXT')
     _migrate(cur, 'ALTER TABLE sales ADD COLUMN created_at TEXT')
@@ -165,6 +167,8 @@ def init_db():
     _migrate(cur, 'ALTER TABLE customers ADD COLUMN debt_amount REAL NOT NULL DEFAULT 0')
     _migrate(cur, 'ALTER TABLE customers ADD COLUMN created_at TEXT')
 
+    _migrate(cur, 'ALTER TABLE sale_items ADD COLUMN subtotal REAL NOT NULL DEFAULT 0')
+
     # copy old column values → new columns (once, idempotent)
     cur.execute('UPDATE products SET unit_price_sell=price WHERE unit_price_sell=0 AND price>0')
     cur.execute('UPDATE products SET unit_price_buy=cost_price WHERE unit_price_buy=0 AND cost_price>0')
@@ -173,6 +177,7 @@ def init_db():
     cur.execute('UPDATE sales SET created_at=date WHERE created_at IS NULL AND date IS NOT NULL')
     cur.execute('UPDATE customers SET full_name=name WHERE full_name IS NULL')
     cur.execute('UPDATE customers SET debt_amount=debt WHERE debt_amount=0 AND debt>0')
+    cur.execute('UPDATE sale_items SET subtotal=price*quantity WHERE subtotal=0')
 
     # ── New tables ────────────────────────────────────────────────────────────
 
@@ -248,6 +253,35 @@ def init_db():
     ''')
 
     cur.execute('''
+        CREATE TABLE IF NOT EXISTS returns (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            sale_id      INTEGER NOT NULL,
+            customer_id  INTEGER,
+            total_refund REAL    NOT NULL DEFAULT 0,
+            reason       TEXT,
+            returned_by  INTEGER,
+            created_at   TEXT    DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (sale_id) REFERENCES sales(id),
+            FOREIGN KEY (customer_id) REFERENCES customers(id)
+        )
+    ''')
+
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS return_items (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            return_id     INTEGER NOT NULL,
+            sale_item_id  INTEGER NOT NULL,
+            product_id    INTEGER NOT NULL,
+            quantity      INTEGER NOT NULL,
+            unit_price    REAL    NOT NULL DEFAULT 0,
+            subtotal      REAL    NOT NULL DEFAULT 0,
+            FOREIGN KEY (return_id) REFERENCES returns(id),
+            FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+    ''')
+
+    cur.execute('''
         CREATE TABLE IF NOT EXISTS purchase_orders (
             id           INTEGER PRIMARY KEY AUTOINCREMENT,
             supplier_id  INTEGER NOT NULL,
@@ -277,6 +311,40 @@ def init_db():
         'CREATE TABLE IF NOT EXISTS billing_items (id INTEGER PRIMARY KEY AUTOINCREMENT, billing_order_id INTEGER NOT NULL, product_id INTEGER NOT NULL, quantity INTEGER NOT NULL, buy_price REAL NOT NULL DEFAULT 0, sale_price REAL NOT NULL DEFAULT 0, FOREIGN KEY (billing_order_id) REFERENCES billing_orders(id), FOREIGN KEY (product_id) REFERENCES products(id))',
     ):
         cur.execute(ddl)
+
+    # ── Product mirror columns ───────────────────────────────────────────────
+    # products keeps legacy columns (quantity, price, cost_price) that most code
+    # reads/writes, plus newer mirror columns (stock_qty, unit_price_sell,
+    # unit_price_buy) used by the dashboard/reports.  These triggers keep the
+    # mirrors in sync automatically so inventory & profit figures stay accurate.
+    cur.executescript('''
+        CREATE TRIGGER IF NOT EXISTS trg_products_insert_sync
+        AFTER INSERT ON products FOR EACH ROW
+        BEGIN
+            UPDATE products SET stock_qty = NEW.quantity,
+                   unit_price_sell = COALESCE(NEW.price, 0),
+                   unit_price_buy = COALESCE(NEW.cost_price, 0)
+             WHERE id = NEW.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_products_qty_sync
+        AFTER UPDATE OF quantity ON products FOR EACH ROW
+        BEGIN
+            UPDATE products SET stock_qty = NEW.quantity WHERE id = NEW.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_products_price_sync
+        AFTER UPDATE OF price ON products FOR EACH ROW
+        BEGIN
+            UPDATE products SET unit_price_sell = NEW.price WHERE id = NEW.id;
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_products_cost_sync
+        AFTER UPDATE OF cost_price ON products FOR EACH ROW
+        BEGIN
+            UPDATE products SET unit_price_buy = COALESCE(NEW.cost_price, 0) WHERE id = NEW.id;
+        END;
+    ''')
 
     conn.commit()
     conn.close()

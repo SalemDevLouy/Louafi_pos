@@ -15,6 +15,7 @@ from utils import backup as bkp
 from utils.lang import tr, lang_manager
 from utils import lang as lang_utils
 from utils.theme import font_manager, MIN_BASE, MAX_BASE, DEFAULT_BASE
+from utils.auth import require_role
 
 logger = logging.getLogger(__name__)
 _CONFIG_PATH = "config.ini"
@@ -278,6 +279,10 @@ class SettingsView(QWidget):
 
     def _save(self):
         try:
+            # RBAC: only admins may change system settings
+            if not require_role('admin'):
+                QMessageBox.warning(self, tr('error'), tr('insuf_perms'))
+                return
             for section in ("store", "receipt", "app", "backup"):
                 if not self._cfg.has_section(section):
                     self._cfg.add_section(section)

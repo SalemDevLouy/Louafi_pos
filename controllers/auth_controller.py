@@ -59,6 +59,9 @@ def change_password(user_id: int, old_password: str, new_password: str) -> tuple
 
 def get_all_users() -> tuple[bool, list | str]:
     try:
+        # RBAC: user listings are admin-only
+        if not auth.require_role('admin'):
+            return False, "Admin privileges required"
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, username, role, full_name, is_active, created_at, last_login, must_change_password FROM users ORDER BY id"
@@ -72,6 +75,10 @@ def get_all_users() -> tuple[bool, list | str]:
 def create_user(actor_id: int, username: str, password: str,
                 role: str, full_name: str) -> tuple[bool, str]:
     try:
+        # RBAC: only admins may create users (defense in depth — the view
+        # already hides this from non-admins)
+        if not auth.require_role('admin'):
+            return False, "Admin privileges required"
         if role not in ("admin", "supervisor", "cashier"):
             return False, "Invalid role"
         conn = get_connection()
@@ -95,6 +102,9 @@ def create_user(actor_id: int, username: str, password: str,
 
 def toggle_user_active(actor_id: int, user_id: int) -> tuple[bool, str]:
     try:
+        # RBAC: only admins may activate/deactivate users
+        if not auth.require_role('admin'):
+            return False, "Admin privileges required"
         conn = get_connection()
         row = conn.execute("SELECT is_active FROM users WHERE id = ?", (user_id,)).fetchone()
         if not row:
@@ -113,6 +123,9 @@ def toggle_user_active(actor_id: int, user_id: int) -> tuple[bool, str]:
 def update_user(actor_id: int, user_id: int, full_name: str,
                 role: str) -> tuple[bool, str]:
     try:
+        # RBAC: only admins may change users/roles
+        if not auth.require_role('admin'):
+            return False, "Admin privileges required"
         if role not in ("admin", "supervisor", "cashier"):
             return False, "Invalid role"
         conn = get_connection()
@@ -138,6 +151,9 @@ def update_user(actor_id: int, user_id: int, full_name: str,
 def admin_reset_password(actor_id: int, user_id: int,
                          new_password: str) -> tuple[bool, str]:
     try:
+        # RBAC: only admins may reset other users' passwords
+        if not auth.require_role('admin'):
+            return False, "Admin privileges required"
         conn = get_connection()
         new_hash = auth.hash_password(new_password)
         conn.execute(

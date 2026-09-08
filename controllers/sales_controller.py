@@ -67,7 +67,12 @@ class SalesController:
     def total(self) -> float:
         return self.subtotal()
 
-    def complete_sale(self, customer_id: int = None) -> Dict:
+    def complete_sale(self, customer_id: int = None, *, cashier_id=None,
+                      discount_id=None, discount_value: float = 0.0,
+                      tax_amount: float = 0.0, amount_paid: float = None,
+                      amount_change: float = None,
+                      payment_method: str = 'cash',
+                      notes: str = '') -> Dict:
         if not self.cart:
             raise ValueError('Cart is empty')
 
@@ -83,24 +88,41 @@ class SalesController:
                     f'Available: {available}, requested: {q}.'
                 )
 
+        subtotal = self.subtotal()
+        total_amount = round(subtotal - discount_value + tax_amount, 2)
+        if amount_paid is None:
+            amount_paid = total_amount
+        if amount_change is None:
+            amount_change = max(round(amount_paid - total_amount, 2), 0)
+
         conn = get_connection()
         cur = conn.cursor()
-        total_amount = self.total()
         date = now_iso()
         cur.execute(
-            'INSERT INTO sales (date, total, customer_id) VALUES (?, ?, ?)',
-            (date, total_amount, customer_id),
+            '''INSERT INTO sales
+               (date, total, customer_id, cashier_id, total_amount,
+                discount_id, discount_value, tax_amount, amount_paid,
+                amount_change, payment_method, status, notes, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', ?, ?)''',
+            (date, total_amount, customer_id, cashier_id, total_amount,
+             discount_id, discount_value, tax_amount, amount_paid,
+             amount_change, payment_method, notes, date),
         )
         sale_id = cur.lastrowid
 
         for item in self.cart:
             p = item['product']
             q = int(item['quantity'])
-            cur.execute('INSERT INTO sale_items (sale_id, product_id, quantity, price) VALUES (?, ?, ?, ?)', (sale_id, p.id, q, p.price))
-
-            # reduce stock
-            new_qty = max(0, p.quantity - q)
-            cur.execute('UPDATE products SET quantity = ? WHERE id = ?', (new_qty, p.id))
+            cur.execute(
+                'INSERT INTO sale_items (sale_id, product_id, quantity, price, subtotal)'
+                ' VALUES (?, ?, ?, ?, ?)',
+                (sale_id, p.id, q, p.price, round(p.price * q, 2)),
+            )
+            # reduce stock (additive & atomic); trigger mirrors stock_qty
+            cur.execute(
+                'UPDATE products SET quantity = MAX(0, quantity - ?) WHERE id = ?',
+                (q, p.id),
+            )
 
         conn.commit()
         conn.close()
@@ -108,8 +130,20 @@ class SalesController:
         sale = {
             'id': sale_id,
             'date': date,
+            'created_at': date,
             'total': total_amount,
-            'items': [{'name': i['product'].name, 'barcode': i['product'].barcode, 'quantity': i['quantity'], 'price': i['product'].price} for i in self.cart],
+            'total_amount': total_amount,
+            'subtotal': round(subtotal, 2),
+            'discount_value': discount_value,
+            'tax_amount': tax_amount,
+            'amount_paid': amount_paid,
+            'amount_change': amount_change,
+            'payment_method': payment_method,
+            'status': 'completed',
+            'items': [{'name': i['product'].name,
+                       'barcode': i['product'].barcode,
+                       'quantity': i['quantity'],
+                       'price': i['product'].price} for i in self.cart],
         }
 
         # write a simple receipt

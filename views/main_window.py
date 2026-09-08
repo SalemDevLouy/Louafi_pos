@@ -15,19 +15,47 @@ from views.user_management_view import UserManagementView
 from views.hidden_dashboard_view import HiddenDashboardView
 from utils.lang import lang_manager, tr
 from utils import auth as auth_utils
+from utils.permissions import role_can
 
-# nav items: (qta icon name, tr-key, button-attr-name)
-_NAV = [
-    ('fa5s.cash-register','nav_sales',    'btn_sales'),
-    ('fa5s.shopping-bag','nav_products',  'btn_products'),
-    ('fa5s.boxes',       'nav_inventory', 'btn_inventory'),
-    ('fa5s.chart-bar',   'nav_reports',   'btn_reports'),
-    ('fa5s.users',       'nav_customers', 'btn_customers'),
-    ('fa5s.truck',       'nav_suppliers', 'btn_suppliers'),
-    ('fa5s.receipt',     'nav_expenses',  'btn_expenses'),
-    ('fa5s.tags',        'nav_discounts', 'btn_discounts'),
-    ('fa5s.cog',         'nav_settings',  'btn_settings'),
-    ('fa5s.user-shield', 'nav_users',     'btn_users'),
+# ── Page registry (order = sidebar order) ─────────────────────────────────────
+# Each entry describes one application page.  'key' must exist in
+# utils/permissions.PAGE_ROLES — the RBAC layer decides which of these pages
+# the logged-in role actually gets in the sidebar and in the stack.
+# 'nav': False marks a secret page (reachable only programmatically).
+_PAGES = [
+    dict(key='sales',     icon='fa5s.cash-register', tr_key='nav_sales',
+         btn='btn_sales',     view='sales_view',     module='views.sales_view',
+         cls='SalesView',     refresh='refresh_cart'),
+    dict(key='products',  icon='fa5s.shopping-bag',  tr_key='nav_products',
+         btn='btn_products',  view='products_view',  module='views.products_view',
+         cls='ProductsView',  refresh='load_products'),
+    dict(key='inventory', icon='fa5s.boxes',         tr_key='nav_inventory',
+         btn='btn_inventory', view='inventory_view', module='views.inventory_view',
+         cls='InventoryView', refresh='refresh'),
+    dict(key='reports',   icon='fa5s.chart-bar',     tr_key='nav_reports',
+         btn='btn_reports',   view='reports_view',   module='views.reports_view',
+         cls='ReportsView',   refresh='generate'),
+    dict(key='customers', icon='fa5s.users',         tr_key='nav_customers',
+         btn='btn_customers', view='customers_view', module='views.customers_view',
+         cls='CustomersView', refresh='refresh_customers'),
+    dict(key='suppliers', icon='fa5s.truck',         tr_key='nav_suppliers',
+         btn='btn_suppliers', view='suppliers_view', module='views.suppliers_view',
+         cls='SuppliersView', refresh='refresh'),
+    dict(key='expenses',  icon='fa5s.receipt',       tr_key='nav_expenses',
+         btn='btn_expenses',  view='expenses_view',  module='views.expenses_view',
+         cls='ExpensesView',  refresh='load'),
+    dict(key='discounts', icon='fa5s.tags',          tr_key='nav_discounts',
+         btn='btn_discounts', view='discounts_view', module='views.discounts_view',
+         cls='DiscountsView', refresh='load'),
+    dict(key='settings',  icon='fa5s.cog',           tr_key='nav_settings',
+         btn='btn_settings',  view='settings_view',  module='views.settings_view',
+         cls='SettingsView',  refresh=None),
+    dict(key='users',     icon='fa5s.user-shield',   tr_key='nav_users',
+         btn='btn_users',     view='users_view',     module='views.user_management_view',
+         cls='UserManagementView', refresh='load'),
+    dict(key='hidden_dashboard', icon='', tr_key='', btn='',
+         view='hidden_dashboard', module='views.hidden_dashboard_view',
+         cls='HiddenDashboardView', refresh='refresh', nav=False),
 ]
 
 _ICON_COLOR        = '#cfd8f5'   # normal icon colour (matches sidebar text)
@@ -50,6 +78,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # controllers
         self.product_controller = ProductController()
         self.sales_controller = SalesController(self.product_controller)
+
+        # ── RBAC: keep only the pages this role is allowed to open ─────────
+        self._role = auth_utils.current_role()
+        self._pages = [dict(p) for p in _PAGES if role_can(self._role, p['key'])]
 
         # central layout: root (vertical) so banner can span full window,
         # with a horizontal body area that holds the sidebar + content.
@@ -106,18 +138,21 @@ class MainWindow(QtWidgets.QMainWindow):
         sb_layout.addWidget(brand_frame)
         sb_layout.addSpacing(8)
 
-        # build nav buttons from _NAV table
+        # build nav buttons ONLY for pages this role may open (RBAC)
         self._nav_buttons = []   # (icon_name, tr_key, QPushButton)
-        for icon_name, tr_key, attr in _NAV:
-            btn = QtWidgets.QPushButton(f'  {tr(tr_key)}')
-            btn.setIcon(qta.icon(icon_name, color=_ICON_COLOR))
+        for page in self._pages:
+            if page.get('nav') is False:
+                continue
+            btn = QtWidgets.QPushButton(f'  {tr(page["tr_key"])}')
+            btn.setIcon(qta.icon(page['icon'], color=_ICON_COLOR))
             btn.setIconSize(_ICON_SIZE)
             btn.setFixedHeight(46)
             btn.setCursor(QtCore.Qt.PointingHandCursor)
             btn.setProperty('flat', True)
             sb_layout.addWidget(btn)
-            setattr(self, attr, btn)
-            self._nav_buttons.append((icon_name, tr_key, btn))
+            setattr(self, page['btn'], btn)
+            page['_btn'] = btn
+            self._nav_buttons.append((page['icon'], page['tr_key'], btn))
 
         sb_layout.addStretch()
 
@@ -178,11 +213,14 @@ class MainWindow(QtWidgets.QMainWindow):
         clock_timer.timeout.connect(self._update_clock)
         clock_timer.start(30_000)
 
-        # user chip
+        # user chip — shows the login AND the role so the active permission
+        # level is always visible
         from utils import auth as _auth
         _sess = _auth.get_session()
         _uname = _sess.get('username', '') if _sess else ''
-        user_chip = QtWidgets.QLabel(f'  {_uname}  ')
+        _urole = (_sess.get('role') or '') if _sess else ''
+        _chip_txt = f'  {_uname} · {_urole}  ' if _urole else f'  {_uname}  '
+        user_chip = QtWidgets.QLabel(_chip_txt)
         user_chip.setStyleSheet(
             'color:#ede9fe; background:#6d28d9; border-radius:12px;'
             'padding:4px 10px; font-size:12px; font-weight:600;'
@@ -193,43 +231,24 @@ class MainWindow(QtWidgets.QMainWindow):
         self.header = QtWidgets.QFrame()   # kept as placeholder, hidden
         self.header.setVisible(False)
 
-        # stacked pages
+        # stacked pages — instantiate ONLY the views this role may use (RBAC).
+        # Sidebar order == stack order, so nav index == stack index.
         self.stack = QtWidgets.QStackedWidget()
-        self.sales_view = SalesView(self.sales_controller, self.product_controller)
-        self.products_view = ProductsView(self.product_controller)
-        self.reports_view = ReportsView()
-        self.inventory_view = InventoryView(self.product_controller)
-        self.customers_view = CustomersView()
-        self.suppliers_view = SuppliersView(self.product_controller)
+        self._views = []
+        for page in self._pages:
+            view = self._make_view(page)
+            setattr(self, page['view'], view)
+            self._views.append(view)
+            self.stack.addWidget(view)
+            page['index'] = self.stack.count() - 1
 
-        self.expenses_view = ExpensesView()
-        self.discounts_view = DiscountsView()
-        self.settings_view = SettingsView()
-        self.users_view = UserManagementView()
-        self.hidden_dashboard = HiddenDashboardView()
-
-        self.stack.addWidget(self.sales_view)       # 0
-        self.stack.addWidget(self.products_view)    # 1
-        self.stack.addWidget(self.inventory_view)   # 2
-        self.stack.addWidget(self.reports_view)     # 3
-        self.stack.addWidget(self.customers_view)   # 4
-        self.stack.addWidget(self.suppliers_view)   # 5
-        self.stack.addWidget(self.expenses_view)    # 6
-        self.stack.addWidget(self.discounts_view)   # 7
-        self.stack.addWidget(self.settings_view)    # 8
-        self.stack.addWidget(self.users_view)       # 9
-        self.stack.addWidget(self.hidden_dashboard) # 10  ← hidden, not in nav
-
-        self.btn_sales.clicked.connect(lambda: self.show_page(0))
-        self.btn_products.clicked.connect(lambda: self.show_page(1))
-        self.btn_inventory.clicked.connect(lambda: self.show_page(2))
-        self.btn_reports.clicked.connect(lambda: self.show_page(3))
-        self.btn_customers.clicked.connect(lambda: self.show_page(4))
-        self.btn_suppliers.clicked.connect(lambda: self.show_page(5))
-        self.btn_expenses.clicked.connect(lambda: self.show_page(6))
-        self.btn_discounts.clicked.connect(lambda: self.show_page(7))
-        self.btn_settings.clicked.connect(lambda: self.show_page(8))
-        self.btn_users.clicked.connect(lambda: self.show_page(9))
+        # wire each nav button to its page
+        for page in self._pages:
+            btn = page.get('_btn')
+            if btn is not None:
+                btn.clicked.connect(
+                    lambda _, ix=page['index']: self.show_page(ix)
+                )
 
         # right-side content column (header + stack). Banner is added
         # to the root layout above so it spans the entire window.
@@ -252,10 +271,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setStatusBar(self.status)
         self.status.showMessage(tr('status_ready'))
 
-        self.show_page(0)
+        self.show_page(0)   # first page the role is allowed to open
 
         QtWidgets.QShortcut(QtCore.Qt.Key_F3, self, activated=lambda: self.show_page(0))
-        QtWidgets.QShortcut(QtCore.Qt.Key_F4, self, activated=lambda: self.show_page(1))
+        _prod = self._page_by_key('products')
+        if _prod is not None:   # F4 only for roles with products access (RBAC)
+            QtWidgets.QShortcut(
+                QtCore.Qt.Key_F4, self,
+                activated=lambda: self.show_page(_prod['index'])
+            )
 
         # apply correct sidebar mode for the initial window size
         QtCore.QTimer.singleShot(0, lambda: self._set_sidebar_mode(self.width() >= BREAK_WIDTH))
@@ -265,18 +289,34 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # hot-reload support (only used in dev mode)
         self._view_class_map = {
-            0: ('views.sales_view', 'SalesView'),
-            1: ('views.products_view', 'ProductsView'),
-            2: ('views.inventory_view', 'InventoryView'),
-            3: ('views.reports_view', 'ReportsView'),
-            4: ('views.customers_view', 'CustomersView'),
-            5: ('views.suppliers_view', 'SuppliersView'),
-            6: ('views.expenses_view', 'ExpensesView'),
-            7: ('views.discounts_view', 'DiscountsView'),
-            8: ('views.settings_view', 'SettingsView'),
-            9: ('views.user_management_view', 'UserManagementView'),
-            10: ('views.hidden_dashboard_view', 'HiddenDashboardView'),
+            p['index']: (p['module'], p['cls']) for p in self._pages
         }
+
+    # ── RBAC helpers ─────────────────────────────────────────────────────────
+
+    def _make_view(self, page: dict):
+        """Instantiate the view class for a page (with controller injection)."""
+        cls = {
+            'sales': SalesView, 'products': ProductsView,
+            'inventory': InventoryView, 'reports': ReportsView,
+            'customers': CustomersView, 'suppliers': SuppliersView,
+            'expenses': ExpensesView, 'discounts': DiscountsView,
+            'settings': SettingsView, 'users': UserManagementView,
+            'hidden_dashboard': HiddenDashboardView,
+        }[page['key']]
+        key = page['key']
+        if key == 'sales':
+            return cls(self.sales_controller, self.product_controller)
+        if key in ('products', 'inventory', 'suppliers'):
+            return cls(self.product_controller)
+        return cls()
+
+    def _page_by_key(self, key: str) -> dict | None:
+        """Return this role's page entry for ``key``, or None if not permitted."""
+        for page in self._pages:
+            if page['key'] == key:
+                return page
+        return None
 
     # ── Clock ──────────────────────────────────────────────────────────────
 
@@ -299,10 +339,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(tr('app_title'))
         self.btn_lang.setText(tr('lang_switch_to_ar'))
         self._set_sidebar_mode(self._sidebar_expanded)   # re-applies all labels + arrow
-        for view in (self.sales_view, self.products_view,
-                     self.inventory_view, self.reports_view, self.customers_view,
-                     self.suppliers_view, self.expenses_view, self.discounts_view,
-                     self.settings_view, self.users_view):
+        for view in self._views:
             if hasattr(view, 'retranslate_ui'):
                 view.retranslate_ui()
         self.status.showMessage(tr('status_refreshed'), 2000)
@@ -311,62 +348,47 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def show_page(self, index: int):
         """Switch stacked page, refresh its data, and update sidebar selection."""
+        page = self._pages[index] if 0 <= index < len(self._pages) else None
+        if page is None:
+            return
+        # ── RBAC re-check: deny pages this role may not open ────────────────
+        # (covers shortcuts and any programmatic show_page() call)
+        if not role_can(self._role, page['key']):
+            self.status.showMessage(tr('insuf_perms'), 3000)
+            return
+
         self.stack.setCurrentIndex(index)
-        for i, (icon_name, label, btn) in enumerate(self._nav_buttons):
-            selected = (i == index)
+        for p in self._pages:
+            btn = p.get('_btn')
+            if btn is None:
+                continue   # secret page / no nav entry
+            selected = (p['index'] == index)
             btn.setProperty('selected', 'true' if selected else 'false')
-            btn.setIcon(qta.icon(icon_name, color=_ICON_COLOR_SEL if selected else _ICON_COLOR))
+            btn.setIcon(qta.icon(p['icon'], color=_ICON_COLOR_SEL if selected else _ICON_COLOR))
             btn.setIconSize(_ICON_SIZE)
             btn.style().unpolish(btn)
             btn.style().polish(btn)
         # always refresh the page being shown so data is live
-        refresh_map = {
-            0: lambda: self.sales_view.refresh_cart(),
-            1: lambda: self.products_view.load_products(),
-            2: lambda: self.inventory_view.refresh(),
-            3: lambda: self.reports_view.generate(),
-            4: lambda: self.customers_view.refresh_customers(),
-            5: lambda: self.suppliers_view.refresh(),
-            6: lambda: self.expenses_view.load(),
-            7: lambda: self.discounts_view.load(),
-            8: None,
-            9: lambda: self.users_view.load(),
-            10: lambda: self.hidden_dashboard.refresh(),
-        }
-        fn = refresh_map.get(index)
-        if fn:
-            fn()
+        if page['refresh']:
+            getattr(self.stack.widget(index), page['refresh'])()
 
     def _open_hidden_dashboard(self):
-        from utils.auth import current_role
-        if current_role() != 'admin':
+        page = self._page_by_key('hidden_dashboard')
+        if page is None or not role_can(self._role, page['key']):
             return
         # deselect all nav buttons (this page has no nav entry)
         for _icon, _key, btn in self._nav_buttons:
             btn.setProperty('selected', 'false')
             btn.style().unpolish(btn)
             btn.style().polish(btn)
-        self.show_page(10)
+        self.show_page(page['index'])
 
     def _refresh_current_page(self):
         """Refresh data on the currently visible page."""
         idx = self.stack.currentIndex()
-        refresh_map = {
-            0: lambda: self.sales_view.refresh_cart(),
-            1: lambda: self.products_view.load_products(),
-            2: lambda: self.inventory_view.refresh(),
-            3: lambda: self.reports_view.generate(),
-            4: lambda: self.customers_view.refresh_customers(),
-            5: lambda: self.suppliers_view.refresh(),
-            6: lambda: self.expenses_view.load(),
-            7: lambda: self.discounts_view.load(),
-            8: None,
-            9: lambda: self.users_view.load(),
-            10: lambda: self.hidden_dashboard.refresh(),
-        }
-        fn = refresh_map.get(idx)
-        if fn:
-            fn()
+        page = self._pages[idx] if 0 <= idx < len(self._pages) else None
+        if page and page['refresh']:
+            getattr(self.stack.widget(idx), page['refresh'])()
         self.status.showMessage(tr('status_refreshed'), 2000)
 
     def resizeEvent(self, event):
@@ -466,20 +488,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.stack.setCurrentIndex(current_idx)
 
             # Update instance reference
-            view_attr_map = {
-                0: 'sales_view',
-                1: 'products_view',
-                2: 'inventory_view',
-                3: 'reports_view',
-                4: 'customers_view',
-                5: 'suppliers_view',
-                6: 'expenses_view',
-                7: 'discounts_view',
-                8: 'settings_view',
-                9: 'users_view',
-                10: 'hidden_dashboard',
-            }
-            attr_name = view_attr_map.get(current_idx)
+            attr_name = self._pages[current_idx]['view']
             if attr_name:
                 setattr(self, attr_name, new_widget)
 
@@ -487,22 +496,9 @@ class MainWindow(QtWidgets.QMainWindow):
             old_widget.deleteLater()
 
             # Trigger refresh on the new view
-            refresh_map = {
-                0: lambda: new_widget.refresh_cart(),
-                1: lambda: new_widget.load_products(),
-                2: lambda: new_widget.refresh(),
-                3: lambda: new_widget.generate(),
-                4: lambda: new_widget.refresh_customers(),
-                5: lambda: new_widget.refresh(),
-                6: lambda: new_widget.load(),
-                7: lambda: new_widget.load(),
-                8: None,
-                9: lambda: new_widget.load(),
-                10: lambda: new_widget.refresh(),
-            }
-            refresh_fn = refresh_map.get(current_idx)
-            if refresh_fn:
-                refresh_fn()
+            refresh_name = self._pages[current_idx]['refresh']
+            if refresh_name:
+                getattr(new_widget, refresh_name)()
 
             print(f"[HotReload] ✓ View rebuilt successfully!")
             self.status.showMessage("🔄 View reloaded", 2000)
@@ -536,14 +532,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if cls is None:
             return None
 
-        # Constructor signatures per view index
-        if index == 0:   # SalesView
+        # Constructor signatures per page key (RBAC-filtered registry)
+        page = self._pages[index]
+        key = page['key']
+        if key == 'sales':   # SalesView
             return cls(self.sales_controller, self.product_controller)
-        elif index == 1: # ProductsView
-            return cls(self.product_controller)
-        elif index == 2: # InventoryView
-            return cls(self.product_controller)
-        elif index == 5: # SuppliersView
+        elif key in ('products', 'inventory', 'suppliers'):
             return cls(self.product_controller)
         else:
             return cls()

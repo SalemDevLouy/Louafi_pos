@@ -131,6 +131,92 @@ class _QtyWidget(QWidget):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Category filter bar (touch-friendly chips)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _CategoryBar(QWidget):
+    changed = pyqtSignal(str)   # '' = All
+
+    _CHIP = (
+        'QPushButton#Chip{background:#ffffff;border:1.5px solid #dbe3ef;'
+        'border-radius:16px;padding:4px 16px;color:#475569;'
+        'font-size:13px;font-weight:600;}'
+        'QPushButton#Chip:hover{background:#f1f5f9;border-color:#cbd5e1;}'
+        'QPushButton#Chip:checked{background:#1a73e8;color:#ffffff;'
+        'border:1.5px solid #1a73e8;}'
+    )
+
+    def __init__(self, categories=None, parent=None):
+        super().__init__(parent)
+        self._chips: list = []
+        self._active = ''
+        self.setFixedHeight(46)
+
+        self._scroll = QScrollArea()
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setStyleSheet(
+            'QScrollArea{background:transparent;border:none;}'
+        )
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        self._container = QWidget()
+        self._lay = QHBoxLayout(self._container)
+        self._lay.setSpacing(8)
+        self._lay.setContentsMargins(0, 0, 0, 0)
+        self._scroll.setWidget(self._container)
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self._scroll)
+
+        if categories:
+            self.set_categories(categories)
+
+    def active_category(self) -> str:
+        return self._active
+
+    def set_categories(self, categories):
+        """Rebuild chips from raw product categories (no ``All`` needed)."""
+        names = ['All'] + list(
+            dict.fromkeys(
+                str(c).strip() for c in (categories or [])
+                if c and str(c).strip()
+            )
+        )
+        self._clear_chips()
+        for name in names:
+            btn = QPushButton(name)
+            btn.setObjectName('Chip')
+            btn.setCheckable(True)
+            btn.setFixedHeight(32)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(self._CHIP)
+            btn.setChecked((name == 'All' and not self._active)
+                           or name == self._active)
+            btn.clicked.connect(lambda _, n=name: self._select(n))
+            self._lay.addWidget(btn)
+            self._chips.append(btn)
+        self._lay.addStretch(1)
+
+    def _clear_chips(self):
+        while self._lay.count():
+            item = self._lay.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+        self._chips.clear()
+
+    def _select(self, name: str):
+        self._active = '' if name == 'All' else name
+        for btn in self._chips:
+            btn.setChecked(btn.text() == name)
+        self.changed.emit(self._active)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Product card
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -145,15 +231,23 @@ class _ProductCard(QFrame):
         'QFrame#ProductCard{background:#eff6ff;border:2.5px solid #1a73e8;'
         'border-radius:14px;}'
     )
+    _D = (
+        'QFrame#ProductCard{background:#f8fafc;border:1.5px dashed #cbd5e1;'
+        'border-radius:14px;}'
+    )
 
     def __init__(self, product, parent=None):
         super().__init__(parent)
         self.product = product
+        self._qty    = int(getattr(product, 'quantity', 0) or 0)
+        self._min    = int(getattr(product, 'min_level', 5) or 5)
+        self._in_cart = 0
+        self._addable = self._qty > 0
+
         self.setObjectName('ProductCard')
-        self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(96)
+        self.setMinimumHeight(86)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setStyleSheet(self._N)
+        self.setStyleSheet(self._D if not self._addable else self._N)
 
         # Add subtle shadow
         from PyQt5.QtWidgets import QGraphicsDropShadowEffect
@@ -165,71 +259,67 @@ class _ProductCard(QFrame):
         self.setGraphicsEffect(self._shadow)
 
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(12, 10, 12, 10)
-        lay.setSpacing(6)
+        lay.setContentsMargins(8, 10, 8, 10)
+        lay.setSpacing(8)
 
-        # Product name
-        name_lbl = QLabel(product.name or '')
-        name_lbl.setWordWrap(True)
-        name_lbl.setAlignment(Qt.AlignCenter)
-        name_lbl.setStyleSheet(
-            'font-size:14px;font-weight:700;color:#1e293b;background:transparent;'
-        )
-        lay.addWidget(name_lbl, 1)
+        # Product name (the "button")
+        self._name_lbl = QLabel(product.name or '')
+        self._name_lbl.setWordWrap(True)
+        self._name_lbl.setAlignment(Qt.AlignCenter)
+        lay.addWidget(self._name_lbl)
 
-        # Price
-        price = float(getattr(product, 'price', 0) or 0)
-        price_lbl = QLabel(f'{price:,.2f}')
-        price_lbl.setAlignment(Qt.AlignCenter)
-        price_lbl.setStyleSheet(
-            'font-size:18px;font-weight:800;color:#1a73e8;background:transparent;'
-        )
-        lay.addWidget(price_lbl)
+        # Stock status circle (green = in stock · amber = low · red = out)
+        self._dot = QLabel()
+        self._dot.setFixedSize(14, 14)
+        self._dot.setAlignment(Qt.AlignCenter)
+        lay.addWidget(self._dot)
 
-        # Stock indicator row
-        stock_row = QHBoxLayout()
-        stock_row.setSpacing(5)
-        stock_row.setContentsMargins(0, 0, 0, 0)
+        self._apply_state()
 
-        qty = int(getattr(product, 'quantity', 0) or 0)
-        min_lvl = int(getattr(product, 'min_level', 5) or 5)
+    # ── public API ──────────────────────────────────────────────────────────
+    def set_in_cart(self, qty: int):
+        self._in_cart = max(int(qty or 0), 0)
+        self._apply_state()
 
-        dot = QLabel()
-        dot.setFixedSize(10, 10)
-        if qty <= 0:
-            dot_color = '#ef4444'  # red — out of stock
-        elif qty <= min_lvl:
-            dot_color = '#f59e0b'  # amber — low stock
+    # ── internals ───────────────────────────────────────────────────────────
+    def _apply_state(self):
+        remaining = self._qty - self._in_cart
+        self._addable = self._qty > 0 and remaining > 0
+
+        if self._qty <= 0:
+            dot, card, name_c = '#ef4444', self._D, '#94a3b8'   # red — out of stock
+        elif remaining <= 0:
+            dot, card, name_c = '#f59e0b', self._N, '#1e293b'   # amber — all in cart
         else:
-            dot_color = '#22c55e'  # green — in stock
-        dot.setStyleSheet(
-            f'background:{dot_color};border-radius:5px;border:none;'
-        )
-        stock_row.addStretch()
-        stock_row.addWidget(dot)
+            dot = '#22c55e' if remaining > self._min else '#f59e0b'
+            card, name_c = self._N, '#1e293b'
 
-        stock_lbl = QLabel(f'{qty} in stock')
-        stock_lbl.setStyleSheet(
-            f'font-size:11px;font-weight:600;color:{_SLATE};background:transparent;'
+        self.setStyleSheet(card)
+        self.setCursor(
+            Qt.PointingHandCursor if self._addable else Qt.ForbiddenCursor
         )
-        stock_row.addWidget(stock_lbl)
-        stock_row.addStretch()
-        lay.addLayout(stock_row)
+
+        self._dot.setStyleSheet(
+            f'background:{dot};border-radius:7px;border:none;'
+        )
+        self._name_lbl.setStyleSheet(
+            f'font-size:14px;font-weight:700;color:{name_c};background:transparent;'
+        )
 
     def enterEvent(self, e):
-        self.setStyleSheet(self._H)
-        # Enhance shadow on hover
-        self._shadow.setBlurRadius(16)
-        self._shadow.setOffset(0, 4)
+        if self._addable:
+            self.setStyleSheet(self._H)
+            self._shadow.setBlurRadius(16)
+            self._shadow.setOffset(0, 4)
 
     def leaveEvent(self, e):
-        self.setStyleSheet(self._N)
-        # Restore normal shadow
-        self._shadow.setBlurRadius(8)
-        self._shadow.setOffset(0, 1)
+        if self._addable:
+            self.setStyleSheet(self._N)
+            self._shadow.setBlurRadius(8)
+            self._shadow.setOffset(0, 1)
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.LeftButton:
+        if self._addable and e.button() == Qt.LeftButton:
             self.clicked.emit(self.product)
         super().mousePressEvent(e)
 
@@ -251,6 +341,9 @@ class SalesView(QWidget):
         self._payment_method                    = 'cash'
         self._all_products: list                = []
         self._held_cart: list                   = []
+        self._grid_cards: dict                  = {}
+        self._search_term                       = ''
+        self._active_category                   = ''
 
         self._build_ui()
         self._load_customers()
@@ -299,8 +392,17 @@ class SalesView(QWidget):
         self.barcode_input.returnPressed.connect(self._on_barcode)
         self.barcode_input.textChanged.connect(self._on_search)
 
+        search_icon = QLabel()
+        search_icon.setFixedSize(20, 20)
+        search_icon.setPixmap(qta.icon('fa5s.search', color='#94a3b8').pixmap(18, 18))
+        barcode_row.addWidget(search_icon)
         barcode_row.addWidget(self.barcode_input, 1)
         lay.addLayout(barcode_row)
+
+        # Category filter chips
+        self.category_bar = _CategoryBar()
+        self.category_bar.changed.connect(self._on_category_changed)
+        lay.addWidget(self.category_bar)
 
         # Product grid
         prod_scroll = QScrollArea()
@@ -535,60 +637,117 @@ class SalesView(QWidget):
         lay.addWidget(self.cart_table, 1)
         return panel
 
-    # ── Checkout panel (vertical layout with prominent total) ─────────────────
+    # ── Checkout panel — Order Summary ─────────────────────────────────────────
 
     def _build_checkout(self) -> QFrame:
         panel = _card_frame()
         outer = QVBoxLayout(panel)
-        outer.setContentsMargins(20, 18, 20, 18)
-        outer.setSpacing(16)
+        outer.setContentsMargins(18, 16, 18, 16)
+        outer.setSpacing(12)
 
-        # ── TOTAL — large and prominent at the top ────────────────────────────
-        total_section = QVBoxLayout()
-        total_section.setSpacing(6)
+        # ── Header: icon tile + title + live item-count pill ──────────────────
+        hdr = QHBoxLayout()
+        hdr.setSpacing(10)
 
-        total_label = QLabel('TOTAL')
-        total_label.setAlignment(Qt.AlignCenter)
-        total_label.setStyleSheet(
-            f'color:{_SLATE};font-size:12px;font-weight:700;'
-            'letter-spacing:1px;background:transparent;'
+        icon_tile = QLabel()
+        icon_tile.setPixmap(
+            qta.icon('fa5s.file-invoice-dollar', color='#ffffff').pixmap(18, 18)
         )
-        total_section.addWidget(total_label)
+        icon_tile.setFixedSize(34, 34)
+        icon_tile.setAlignment(Qt.AlignCenter)
+        icon_tile.setStyleSheet(f'background:{_BLUE};border:none;border-radius:10px;')
+        hdr.addWidget(icon_tile)
+
+        self._sum_title = QLabel(tr('order_summary'))
+        self._sum_title.setStyleSheet(
+            f'color:{_DARK};font-size:17px;font-weight:800;'
+            'background:transparent;border:none;'
+        )
+        hdr.addWidget(self._sum_title)
+        hdr.addStretch()
+
+        self._sum_items_lbl = QLabel('0')
+        self._sum_items_lbl.setAlignment(Qt.AlignCenter)
+        self._sum_items_lbl.setToolTip(tr('cart'))
+        self._sum_items_lbl.setStyleSheet(
+            f'background:#eff6ff;color:{_BLUE};border:none;'
+            'border-radius:12px;padding:5px 14px;font-size:13px;font-weight:800;'
+        )
+        hdr.addWidget(self._sum_items_lbl)
+        outer.addLayout(hdr)
+
+        # ── TOTAL — hero card with blue gradient ──────────────────────────────
+        total_card = QFrame()
+        total_card.setObjectName('TotalCard')
+        total_card.setStyleSheet(
+            'QFrame#TotalCard{background:qlineargradient('
+            'x1:0,y1:0,x2:1,y2:1,'
+            f'stop:0 {_BLUE}, stop:1 #0b5cc4);'
+            'border:none;border-radius:16px;}'
+        )
+        total_lay = QVBoxLayout(total_card)
+        total_lay.setContentsMargins(16, 12, 16, 12)
+        total_lay.setSpacing(2)
+
+        self._total_caption = QLabel(tr('total').upper())
+        self._total_caption.setAlignment(Qt.AlignCenter)
+        self._total_caption.setStyleSheet(
+            'color:#dbeafe;font-size:11px;font-weight:700;'
+            'background:transparent;border:none;'
+        )
+        total_lay.addWidget(self._total_caption)
 
         self.lbl_total = QLabel('0.00')
         self.lbl_total.setAlignment(Qt.AlignCenter)
-        self.lbl_total.setFixedHeight(72)
         self.lbl_total.setStyleSheet(
-            f'font-size:42px;font-weight:900;color:#ffffff;'
-            f'background:{_BLUE};border-radius:14px;padding:0 24px;'
+            'color:#ffffff;font-size:36px;font-weight:900;'
+            'background:transparent;border:none;'
         )
-        total_section.addWidget(self.lbl_total)
-        outer.addLayout(total_section)
+        total_lay.addWidget(self.lbl_total)
+
+        self._incl_tax_lbl = QLabel(tr('incl_tax'))
+        self._incl_tax_lbl.setAlignment(Qt.AlignCenter)
+        self._incl_tax_lbl.setStyleSheet(
+            'color:#bfdbfe;font-size:10px;font-weight:600;'
+            'background:transparent;border:none;'
+        )
+        total_lay.addWidget(self._incl_tax_lbl)
+        outer.addWidget(total_card)
 
         outer.addWidget(_divider())
 
-        # ── Payment method (larger buttons) ────────────────────────────────────
-        pm_label = QLabel('Payment Method')
-        pm_label.setStyleSheet(f'color:{_DARK};font-size:14px;font-weight:700;')
-        outer.addWidget(pm_label)
+        # ── Payment method — segmented icon buttons ────────────────────────────
+        self._pm_caption = QLabel(tr('payment_method'))
+        self._pm_caption.setStyleSheet(
+            f'color:{_DARK};font-size:13px;font-weight:700;'
+            'background:transparent;border:none;'
+        )
+        outer.addWidget(self._pm_caption)
 
         pm_row = QHBoxLayout()
         pm_row.setSpacing(10)
         self._pay_btns: dict[str, QPushButton] = {}
-        for key, label, color in [
-            ('cash',    'Cash',    _GREEN),
-            ('card',    'Card',    _BLUE),
-            ('partial', 'Partial', _AMBER),
+        for key, label_key, color, tint, icon_name in [
+            ('cash', 'cash',           _GREEN, 'rgba(22,163,74,8%)',  'fa5s.money-bill-wave'),
+            ('debt', 'debt_on_credit', _AMBER, 'rgba(245,158,11,12%)', 'fa5s.file-invoice-dollar'),
         ]:
-            btn = QPushButton(label)
-            btn.setFixedHeight(48)
+            btn = QPushButton(f'  {tr(label_key)}')
+            btn.setIcon(qta.icon(icon_name, color=color))
+            btn.setIconSize(QtCore.QSize(16, 16))
+            btn.setFixedHeight(46)
             btn.setCheckable(True)
+            btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(
                 f'QPushButton{{border:2px solid {color};color:{color};'
-                'background:#fff;border-radius:10px;font-size:15px;font-weight:700;'
-                f'padding:0 20px;}}'
-                f'QPushButton:hover{{background:{color}15;}}'
-                f'QPushButton:checked{{background:{color};color:#fff;}}'
+                'background:#fff;border-radius:10px;font-size:14px;'
+                'font-weight:700;padding:0 12px;}'
+                f'QPushButton:hover{{background:{tint};}}'
+                f'QPushButton:checked{{background:{color};color:#ffffff;}}'
+            )
+            # White icon while checked so it stays visible on the colored bg
+            btn.toggled.connect(
+                lambda checked, b=btn, n=icon_name, c=color:
+                    b.setIcon(qta.icon(n, color='#ffffff' if checked else c))
             )
             btn.clicked.connect(lambda _, k=key: self._set_payment(k))
             self._pay_btns[key] = btn
@@ -596,10 +755,13 @@ class SalesView(QWidget):
         self._pay_btns['cash'].setChecked(True)
         outer.addLayout(pm_row)
 
-        # ── Amount paid + change ───────────────────────────────────────────────
-        paid_label = QLabel('Amount Paid')
-        paid_label.setStyleSheet(f'color:{_DARK};font-size:14px;font-weight:700;')
-        outer.addWidget(paid_label)
+        # ── Amount paid + change / due ─────────────────────────────────────────
+        self._paid_caption = QLabel(tr('amount_paid'))
+        self._paid_caption.setStyleSheet(
+            f'color:{_DARK};font-size:13px;font-weight:700;'
+            'background:transparent;border:none;'
+        )
+        outer.addWidget(self._paid_caption)
 
         paid_row = QHBoxLayout()
         paid_row.setSpacing(12)
@@ -614,17 +776,32 @@ class SalesView(QWidget):
         )
         self.paid_input.valueChanged.connect(self._update_change)
 
-        change_container = QVBoxLayout()
-        change_container.setSpacing(2)
-        change_lbl_text = QLabel('Change')
-        change_lbl_text.setStyleSheet(f'color:{_SLATE};font-size:11px;font-weight:600;')
+        change_box = QFrame()
+        change_box.setObjectName('ChangeBox')
+        change_box.setStyleSheet(
+            'QFrame#ChangeBox{background:#f8fafc;'
+            'border:1px solid #eef2f7;border-radius:10px;}'
+        )
+        change_lay = QVBoxLayout(change_box)
+        change_lay.setContentsMargins(12, 6, 12, 6)
+        change_lay.setSpacing(0)
+        self._change_caption = QLabel(tr('change'))
+        self._change_caption.setAlignment(Qt.AlignCenter)
+        self._change_caption.setStyleSheet(
+            f'color:{_SLATE};font-size:10px;font-weight:700;'
+            'background:transparent;border:none;'
+        )
         self.lbl_change = QLabel('0.00')
-        self.lbl_change.setStyleSheet(f'font-size:18px;font-weight:800;color:{_GREEN};')
-        change_container.addWidget(change_lbl_text)
-        change_container.addWidget(self.lbl_change)
+        self.lbl_change.setAlignment(Qt.AlignCenter)
+        self.lbl_change.setStyleSheet(
+            f'font-size:16px;font-weight:800;color:{_GREEN};'
+            'background:transparent;border:none;'
+        )
+        change_lay.addWidget(self._change_caption)
+        change_lay.addWidget(self.lbl_change)
 
         paid_row.addWidget(self.paid_input, 2)
-        paid_row.addLayout(change_container, 1)
+        paid_row.addWidget(change_box, 1)
         outer.addLayout(paid_row)
 
         outer.addWidget(_divider())
@@ -634,9 +811,12 @@ class SalesView(QWidget):
         discount_section.setSpacing(10)
 
         disc_col = QVBoxLayout()
-        disc_col.setSpacing(6)
-        disc_lbl = QLabel('Discount')
-        disc_lbl.setStyleSheet(f'color:{_SLATE};font-size:13px;font-weight:600;')
+        disc_col.setSpacing(5)
+        self._disc_caption = QLabel(tr('discount'))
+        self._disc_caption.setStyleSheet(
+            f'color:{_SLATE};font-size:12px;font-weight:600;'
+            'background:transparent;border:none;'
+        )
         self.disc_combo = QComboBox()
         self.disc_combo.setFixedHeight(40)
         self.disc_combo.setStyleSheet(
@@ -645,123 +825,176 @@ class SalesView(QWidget):
             'QComboBox::drop-down{border:none;width:22px;}'
         )
         self.disc_combo.currentIndexChanged.connect(self._on_discount_changed)
-        disc_col.addWidget(disc_lbl)
+        disc_col.addWidget(self._disc_caption)
         disc_col.addWidget(self.disc_combo)
 
         coupon_col = QVBoxLayout()
-        coupon_col.setSpacing(6)
-        coupon_lbl = QLabel('Coupon Code')
-        coupon_lbl.setStyleSheet(f'color:{_SLATE};font-size:13px;font-weight:600;')
+        coupon_col.setSpacing(5)
+        self._coupon_caption = QLabel(tr('coupon_code'))
+        self._coupon_caption.setStyleSheet(
+            f'color:{_SLATE};font-size:12px;font-weight:600;'
+            'background:transparent;border:none;'
+        )
         coupon_row = QHBoxLayout()
         coupon_row.setSpacing(6)
         self.coupon_input = QLineEdit()
-        self.coupon_input.setPlaceholderText('Enter code…')
+        self.coupon_input.setPlaceholderText(tr('enter_code'))
         self.coupon_input.setFixedHeight(40)
         self.coupon_input.setStyleSheet(
             'QLineEdit{border:1.5px solid #cbd5e1;border-radius:8px;'
             'padding:0 12px;font-size:13px;background:#fff;}'
             'QLineEdit:focus{border:1.5px solid #1a73e8;}'
         )
-        apply_btn = QPushButton('Apply')
-        apply_btn.setFixedHeight(40)
-        apply_btn.setFixedWidth(72)
-        apply_btn.setStyleSheet(
+        self._apply_btn = QPushButton(f'  {tr("apply")}')
+        self._apply_btn.setIcon(qta.icon('fa5s.check', color=_BLUE))
+        self._apply_btn.setIconSize(QtCore.QSize(14, 14))
+        self._apply_btn.setFixedHeight(40)
+        self._apply_btn.setCursor(Qt.PointingHandCursor)
+        self._apply_btn.setStyleSheet(
             'QPushButton{background:transparent;color:#1a73e8;'
             'border:1.5px solid #1a73e8;border-radius:8px;'
-            'padding:0 16px;font-size:13px;font-weight:600;}'
+            'padding:0 14px;font-size:13px;font-weight:600;}'
             'QPushButton:hover{background:#eff6ff;}'
         )
-        apply_btn.clicked.connect(self._apply_coupon)
+        self._apply_btn.clicked.connect(self._apply_coupon)
         coupon_row.addWidget(self.coupon_input, 1)
-        coupon_row.addWidget(apply_btn)
-        coupon_col.addWidget(coupon_lbl)
+        coupon_row.addWidget(self._apply_btn)
+        coupon_col.addWidget(self._coupon_caption)
         coupon_col.addLayout(coupon_row)
 
         discount_section.addLayout(disc_col, 1)
         discount_section.addLayout(coupon_col, 1)
         outer.addLayout(discount_section)
 
-        # ── Totals breakdown ───────────────────────────────────────────────────
-        breakdown = QVBoxLayout()
-        breakdown.setSpacing(8)
-        breakdown.setContentsMargins(0, 8, 0, 8)
+        # ── Totals breakdown — inset box with icon rows ────────────────────────
+        brk = QFrame()
+        brk.setObjectName('SummaryBox')
+        brk.setStyleSheet(
+            'QFrame#SummaryBox{background:#f8fafc;'
+            'border:1px solid #eef2f7;border-radius:12px;}'
+        )
+        brk_lay = QVBoxLayout(brk)
+        brk_lay.setContentsMargins(14, 10, 14, 10)
+        brk_lay.setSpacing(8)
 
-        def _trow(label: str, bold: bool = False):
+        def _brow(icon_name: str, icon_color: str, caption: str):
             row = QHBoxLayout()
             row.setSpacing(8)
-            fs = '14px' if not bold else '16px'
-            fw = '600'  if not bold else '800'
-            lb = QLabel(label)
-            lb.setStyleSheet(f'color:{_SLATE};font-size:{fs};font-weight:{fw};')
-            vl = QLabel('0.00')
-            vl.setStyleSheet(f'color:{_DARK};font-size:{fs};font-weight:{fw};')
-            vl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            ic_lbl = QLabel()
+            ic_lbl.setPixmap(qta.icon(icon_name, color=icon_color).pixmap(13, 13))
+            ic_lbl.setFixedSize(15, 15)
+            ic_lbl.setStyleSheet('background:transparent;border:none;')
+            row.addWidget(ic_lbl)
+            lb = QLabel(caption)
+            lb.setStyleSheet(
+                f'color:{_SLATE};font-size:13px;font-weight:600;'
+                'background:transparent;border:none;'
+            )
             row.addWidget(lb)
             row.addStretch()
+            vl = QLabel('0.00')
+            vl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            vl.setStyleSheet(
+                f'color:{_DARK};font-size:13px;font-weight:700;'
+                'background:transparent;border:none;'
+            )
             row.addWidget(vl)
-            return row, vl
+            brk_lay.addLayout(row)
+            return vl, lb
 
-        sub_row,   self.lbl_sub  = _trow('Subtotal')
-        disc_row2, self.lbl_disc = _trow('Discount')
-        tax_row,   self.lbl_tax  = _trow('Tax')
-        for r in (sub_row, disc_row2, tax_row):
-            breakdown.addLayout(r)
+        self.lbl_sub,  self._lbl_sub_caption  = _brow(
+            'fa5s.shopping-basket', '#64748b', tr('subtotal'))
+        self.lbl_disc, self._lbl_disc_caption = _brow(
+            'fa5s.tag', '#16a34a', tr('discount'))
+        self.lbl_tax,  self._lbl_tax_caption  = _brow(
+            'fa5s.percent', '#64748b', tr('tax'))
 
-        outer.addLayout(breakdown)
+        # "You save" pill — only visible while a discount is applied
+        self._savings_lbl = QLabel()
+        self._savings_lbl.setAlignment(Qt.AlignCenter)
+        self._savings_lbl.setVisible(False)
+        self._savings_lbl.setStyleSheet(
+            'background:#ecfdf5;color:#059669;border:1px solid #a7f3d0;'
+            'border-radius:10px;padding:5px 10px;font-size:12px;font-weight:700;'
+        )
+        brk_lay.addWidget(self._savings_lbl)
+        outer.addWidget(brk)
 
         outer.addWidget(_divider())
 
-        # ── Action buttons (larger and more prominent) ─────────────────────────
-        self.btn_complete = QPushButton('  Complete Sale  (F10)')
+        # ── Primary action ─────────────────────────────────────────────────────
+        self.btn_complete = QPushButton(f'  {tr("complete_sale")}  (F10)')
         self.btn_complete.setIcon(qta.icon('fa5s.check-circle', color='#fff'))
         self.btn_complete.setIconSize(QtCore.QSize(20, 20))
         self.btn_complete.setFixedHeight(56)
+        self.btn_complete.setCursor(Qt.PointingHandCursor)
         self.btn_complete.setStyleSheet(
-            f'QPushButton{{background:{_GREEN};color:#fff;border-radius:12px;'
-            'font-size:17px;font-weight:800;border:none;}}'
-            f'QPushButton:hover{{background:#15803d;}}'
-            f'QPushButton:pressed{{background:#166534;}}'
+            f'QPushButton{{background:qlineargradient(x1:0,y1:0,x2:0,y2:1,'
+            f'stop:0 {_GREEN}, stop:1 #15803d);color:#fff;border-radius:12px;'
+            'font-size:17px;font-weight:800;border:none;}'
+            'QPushButton:hover{background:#15803d;}'
+            'QPushButton:pressed{background:#166534;}'
             'QPushButton:disabled{background:#cbd5e1;color:#94a3b8;}'
         )
         self.btn_complete.clicked.connect(self._complete_sale)
         outer.addWidget(self.btn_complete)
 
+        # ── Secondary actions ──────────────────────────────────────────────────
         aux_row = QHBoxLayout()
         aux_row.setSpacing(10)
-        self.btn_hold = QPushButton('  Hold')
+        self.btn_hold = QPushButton(f'  {tr("hold")}')
         self.btn_hold.setIcon(qta.icon('fa5s.pause-circle', color=_AMBER))
-        self.btn_hold.setIconSize(QtCore.QSize(18, 18))
+        self.btn_hold.setIconSize(QtCore.QSize(16, 16))
         self.btn_hold.setFixedHeight(44)
+        self.btn_hold.setCursor(Qt.PointingHandCursor)
         self.btn_hold.setStyleSheet(
             f'QPushButton{{background:transparent;color:{_AMBER};'
             f'border:2px solid {_AMBER};border-radius:10px;'
-            'padding:0 20px;font-size:14px;font-weight:700;}}'
-            f'QPushButton:hover{{background:#fffbeb;}}'
+            'padding:0 12px;font-size:13px;font-weight:700;}'
+            'QPushButton:hover{background:#fffbeb;}'
         )
         self.btn_hold.clicked.connect(self._hold_sale)
 
-        self.btn_new = QPushButton('  New Sale')
+        self.btn_new = QPushButton(f'  {tr("new_sale")}')
         self.btn_new.setIcon(qta.icon('fa5s.plus-circle', color=_BLUE))
-        self.btn_new.setIconSize(QtCore.QSize(18, 18))
+        self.btn_new.setIconSize(QtCore.QSize(16, 16))
         self.btn_new.setFixedHeight(44)
+        self.btn_new.setCursor(Qt.PointingHandCursor)
         self.btn_new.setStyleSheet(
             f'QPushButton{{background:transparent;color:{_BLUE};'
             f'border:2px solid {_BLUE};border-radius:10px;'
-            'padding:0 20px;font-size:14px;font-weight:700;}}'
-            f'QPushButton:hover{{background:#eff6ff;}}'
+            'padding:0 12px;font-size:13px;font-weight:700;}'
+            'QPushButton:hover{background:#eff6ff;}'
         )
         self.btn_new.clicked.connect(self._new_sale)
 
-        aux_row.addWidget(self.btn_hold)
-        aux_row.addWidget(self.btn_new)
+        self.btn_return = QPushButton(f"  {tr('ret_open')}")
+        self.btn_return.setIcon(qta.icon('fa5s.undo', color=_RED))
+        self.btn_return.setIconSize(QtCore.QSize(16, 16))
+        self.btn_return.setFixedHeight(44)
+        self.btn_return.setCursor(Qt.PointingHandCursor)
+        self.btn_return.setStyleSheet(
+            f'QPushButton{{background:transparent;color:{_RED};'
+            f'border:2px solid {_RED};border-radius:10px;'
+            'padding:0 12px;font-size:13px;font-weight:700;}'
+            'QPushButton:hover{background:#fef2f2;}'
+        )
+        self.btn_return.clicked.connect(self._open_returns)
+
+        aux_row.addWidget(self.btn_hold, 1)
+        aux_row.addWidget(self.btn_new, 1)
+        aux_row.addWidget(self.btn_return, 2)
         outer.addLayout(aux_row)
 
-        self.btn_resume = QPushButton('Resume Held Sale')
+        # ── Resume held sale banner ────────────────────────────────────────────
+        self.btn_resume = QPushButton(tr('resume_held'))
         self.btn_resume.setFixedHeight(40)
         self.btn_resume.setVisible(False)
+        self.btn_resume.setCursor(Qt.PointingHandCursor)
         self.btn_resume.setStyleSheet(
             f'QPushButton{{background:#fef3c7;color:#92400e;border:2px solid {_AMBER};'
-            'border-radius:10px;font-size:13px;font-weight:700;}}'
+            'border-radius:10px;font-size:13px;font-weight:700;}'
+            'QPushButton:hover{background:#fde68a;}'
         )
         self.btn_resume.clicked.connect(self._resume_held)
         outer.addWidget(self.btn_resume)
@@ -774,18 +1007,28 @@ class SalesView(QWidget):
 
     def _load_products(self, category: str | None = None):
         self._all_products = self.product_controller.get_all()
-        self._fill_grid(self._all_products)
+        cats = list(dict.fromkeys(
+            str(p.category or '').strip() for p in self._all_products
+            if p.category and str(p.category).strip()
+        ))
+        self.category_bar.set_categories(cats)
+        self._rebuild_grid()
 
     def _fill_grid(self, products):
         while self._grid_layout.count():
             w = self._grid_layout.takeAt(0).widget()
             if w:
                 w.deleteLater()
+        self._grid_cards.clear()
+
         COLS = 3
         for idx, p in enumerate(products):
             card = _ProductCard(p)
             card.clicked.connect(self._add_product)
             self._grid_layout.addWidget(card, idx // COLS, idx % COLS)
+            self._grid_cards[p.id] = card
+        self._sync_cart_indicators()
+
         if not products:
             empty_container = QWidget()
             empty_layout = QVBoxLayout(empty_container)
@@ -809,6 +1052,30 @@ class SalesView(QWidget):
 
             self._grid_layout.addWidget(empty_container, 0, 0, 1, COLS)
 
+    def _rebuild_grid(self):
+        """Apply active category + search term, then re-render the grid."""
+        prods = self._all_products
+        if self._active_category:
+            prods = [p for p in prods
+                     if (p.category or '').strip() == self._active_category]
+        term = self._search_term.lower()
+        if term:
+            prods = [p for p in prods
+                     if term in (p.name or '').lower()
+                     or term in (p.barcode or '').lower()]
+        self._fill_grid(prods)
+
+    def _on_category_changed(self, category: str):
+        self._active_category = '' if category == 'All' else category
+        self._rebuild_grid()
+
+    def _sync_cart_indicators(self):
+        """Push current cart quantities into the product cards (no grid rebuild)."""
+        qtys = {i['product'].id: i['quantity']
+                for i in self.sales_controller.cart}
+        for pid, card in self._grid_cards.items():
+            card.set_in_cart(qtys.get(pid, 0))
+
     def _load_customers(self):
         self.cust_combo.blockSignals(True)
         prev = self._selected_customer_id
@@ -830,7 +1097,7 @@ class SalesView(QWidget):
     def _load_discounts(self):
         self.disc_combo.blockSignals(True)
         self.disc_combo.clear()
-        self.disc_combo.addItem('No discount', None)
+        self.disc_combo.addItem(tr('no_discount'), None)
         ok, data = discount_controller.get_all(active_only=True)
         if ok:
             for d in data:
@@ -866,12 +1133,8 @@ class SalesView(QWidget):
         self.refresh_cart()
 
     def _on_search(self, text: str):
-        term = text.strip()
-        if not term:
-            self._fill_grid(self._all_products)
-            return
-        results = self.product_controller.search(term)
-        self._fill_grid(results)
+        self._search_term = text.strip()
+        self._rebuild_grid()
 
     def _clear_cart(self):
         for item in list(self.sales_controller.cart):
@@ -884,6 +1147,14 @@ class SalesView(QWidget):
     def _new_sale(self):
         self._clear_cart()
         self.cust_combo.setCurrentIndex(0)
+
+    def _open_returns(self):
+        from controllers.returns_controller import ReturnsController
+        from views.returns_dialog import ReturnDialog
+        dlg = ReturnDialog(ReturnsController(), parent=self)
+        if dlg.exec_() == QtWidgets.QDialog.Accepted:
+            self._load_products()   # stock indicators changed
+            self.refresh_cart()
 
     # ─────────────────────────────────────────────────────────────────────────
     # Hold / Resume
@@ -989,9 +1260,26 @@ class SalesView(QWidget):
         t   = self._compute_totals()
         cur = _currency()
         self.lbl_sub.setText(f'{t["subtotal"]:,.2f} {cur}')
-        self.lbl_disc.setText(f'-{t["disc_amount"]:,.2f} {cur}')
+        if t['disc_amount'] > 0:
+            self.lbl_disc.setText(f'-{t["disc_amount"]:,.2f} {cur}')
+            self.lbl_disc.setStyleSheet(
+                f'color:{_GREEN};font-size:13px;font-weight:800;'
+                'background:transparent;border:none;'
+            )
+            self._savings_lbl.setText(
+                f'{tr("you_save")} {t["disc_amount"]:,.2f} {cur}'
+            )
+            self._savings_lbl.setVisible(True)
+        else:
+            self.lbl_disc.setText('—')
+            self.lbl_disc.setStyleSheet(
+                'color:#94a3b8;font-size:13px;font-weight:700;'
+                'background:transparent;border:none;'
+            )
+            self._savings_lbl.setVisible(False)
         self.lbl_tax.setText(f'{t["tax"]:,.2f} {cur}  ({int(t["tax_rate"]*100)}%)')
         self.lbl_total.setText(f'{t["total"]:,.2f} {cur}')
+        self._sum_items_lbl.setText(str(n))
 
         if self._payment_method == 'cash':
             self.paid_input.blockSignals(True)
@@ -1000,15 +1288,26 @@ class SalesView(QWidget):
 
         self._update_change()
         self.btn_complete.setEnabled(n > 0)
+        self._sync_cart_indicators()
 
     def _update_change(self):
-        t      = self._compute_totals()
-        paid   = self.paid_input.value()
-        change = max(paid - t['total'], 0)
-        cur    = _currency()
-        self.lbl_change.setText(f'{change:,.2f} {cur}')
-        color = _GREEN if change >= 0 else _RED
-        self.lbl_change.setStyleSheet(f'font-size:18px;font-weight:800;color:{color};')
+        t    = self._compute_totals()
+        paid = self.paid_input.value()
+        cur  = _currency()
+        if paid < t['total']:
+            # Underpaid — show the outstanding balance in red
+            self._change_caption.setText(tr('due'))
+            self.lbl_change.setText(f'{t["total"] - paid:,.2f} {cur}')
+            self.lbl_change.setStyleSheet(
+                f'font-size:16px;font-weight:800;color:{_RED};background:transparent;'
+            )
+        else:
+            self._change_caption.setText(tr('change'))
+            change = paid - t['total']
+            self.lbl_change.setText(f'{change:,.2f} {cur}')
+            self.lbl_change.setStyleSheet(
+                f'font-size:16px;font-weight:800;color:{_GREEN};background:transparent;'
+            )
 
     # ─────────────────────────────────────────────────────────────────────────
     # Event handlers
@@ -1073,9 +1372,12 @@ class SalesView(QWidget):
         self._payment_method = method
         for k, btn in self._pay_btns.items():
             btn.setChecked(k == method)
-        t = self._compute_totals()
-        if method == 'cash':
-            self.paid_input.setValue(t['total'])
+        total = self._compute_totals()['total']
+        self.paid_input.blockSignals(True)
+        # Debt: default to paying nothing now (rest goes on the customer's
+        # account).  Cash: pre-fill with the total as before.
+        self.paid_input.setValue(total if method == 'cash' else 0.0)
+        self.paid_input.blockSignals(False)
         self._update_change()
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -1090,30 +1392,60 @@ class SalesView(QWidget):
             t    = self._compute_totals()
             paid = self.paid_input.value()
 
-            if self._payment_method != 'partial' and paid < t['total']:
+            # Debt sales require a registered customer (walk-in can't owe money)
+            if self._payment_method == 'debt' and not self._selected_customer_id:
+                QMessageBox.warning(
+                    self, 'Debt sale',
+                    'Debt sales require a registered customer.\n'
+                    'Select a customer first, or switch to Cash.'
+                )
+                return
+
+            # Cash sales must be fully paid; debt sales allow partial payment
+            if self._payment_method != 'debt' and paid < t['total']:
                 QMessageBox.warning(
                     self, 'Insufficient payment',
                     f'Amount paid ({paid:,.2f}) is less than total ({t["total"]:,.2f}).'
                 )
                 return
 
+            from utils.auth import current_user_id
+            disc = self._selected_discount
             sale = self.sales_controller.complete_sale(
-                customer_id=self._selected_customer_id
+                customer_id=self._selected_customer_id,
+                cashier_id=current_user_id(),
+                discount_id=disc.get('id') if disc else None,
+                discount_value=t['disc_amount'],
+                tax_amount=t['tax'],
+                amount_paid=paid,
+                amount_change=max(paid - t['total'], 0),
+                payment_method=self._payment_method,
             )
 
             from utils.auth import get_session
             sess = get_session()
-            sale['cashier_name']   = (sess or {}).get('full_name') or (sess or {}).get('username', '')
-            sale['total_amount']   = t['total']
-            sale['discount_value'] = t['disc_amount']
-            sale['tax_amount']     = t['tax']
-            sale['amount_paid']    = paid
-            sale['amount_change']  = max(paid - t['total'], 0)
-            sale['payment_method'] = self._payment_method
+            sale['cashier_name'] = (sess or {}).get('full_name') or (sess or {}).get('username', '')
+
+            # ── Record the unpaid balance as customer debt ─────────────────────
+            remaining = round(t['total'] - paid, 2)
+            if self._payment_method == 'debt' and remaining > 0:
+                try:
+                    self.customer_controller.add_debt(
+                        self._selected_customer_id, remaining,
+                        note=f'Sale #{sale.get("id", "")}',
+                    )
+                except Exception:
+                    logger.error('add_debt failed\n%s', traceback.format_exc())
+                    QMessageBox.warning(
+                        self, 'Debt',
+                        f'Sale saved, but the debt of {remaining:,.2f} '
+                        f'could not be recorded for this customer.'
+                    )
 
             self._clear_cart()
             self.cust_combo.setCurrentIndex(0)
             self._load_products()
+            self._load_customers()   # refresh "owes" amounts after a debt sale
 
             try:
                 from views.receipt_dialog import ReceiptDialog
@@ -1149,3 +1481,28 @@ class SalesView(QWidget):
 
     def retranslate_ui(self, lang=None):
         self.cart_title.setText(tr('cart'))
+
+        # ── Order summary panel ──────────────────────────────────────────────
+        self._sum_title.setText(tr('order_summary'))
+        self._sum_items_lbl.setToolTip(tr('cart'))
+        self._total_caption.setText(tr('total').upper())
+        self._incl_tax_lbl.setText(tr('incl_tax'))
+        self._lbl_sub_caption.setText(tr('subtotal'))
+        self._lbl_disc_caption.setText(tr('discount'))
+        self._lbl_tax_caption.setText(tr('tax'))
+        self._pm_caption.setText(tr('payment_method'))
+        self._pay_btns['cash'].setText(f"  {tr('cash')}")
+        self._pay_btns['debt'].setText(f"  {tr('debt_on_credit')}")
+        self._paid_caption.setText(tr('amount_paid'))
+        self._disc_caption.setText(tr('discount'))
+        self.disc_combo.setItemText(0, tr('no_discount'))
+        self._coupon_caption.setText(tr('coupon_code'))
+        self.coupon_input.setPlaceholderText(tr('enter_code'))
+        self._apply_btn.setText(f"  {tr('apply')}")
+        self.btn_complete.setText(f"  {tr('complete_sale')}  (F10)")
+        self.btn_hold.setText(f"  {tr('hold')}")
+        self.btn_new.setText(f"  {tr('new_sale')}")
+        self.btn_return.setText(f"  {tr('ret_open')}")
+        self.btn_resume.setText(tr('resume_held'))
+        # Refresh dynamic texts (discount row, savings pill, change/due)
+        self.refresh_cart()

@@ -129,8 +129,8 @@ def end_of_day(target_date: str) -> tuple[bool, dict | str]:
             (target_date,),
         ).fetchall()
         refunds = conn.execute(
-            """SELECT COUNT(*) as count, COALESCE(SUM(total_amount),0) as total
-               FROM sales WHERE DATE(created_at)=? AND status='refunded'""",
+            """SELECT COUNT(*) as count, COALESCE(SUM(total_refund),0) as total
+               FROM returns WHERE DATE(created_at)=?""",
             (target_date,),
         ).fetchone()
         summary["payment_breakdown"] = [dict(r) for r in payment_breakdown]
