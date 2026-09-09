@@ -67,6 +67,8 @@ TRANSLATIONS = {
     'no_customer':          {'en': 'No Customer',       'ar': 'لا يوجد عميل'},
     'no_customer_msg':      {'en': 'Please select a customer first.',
                              'ar': 'يرجى تحديد عميل أولاً.'},
+    'cart_empty_hint':      {'en': 'Scan a barcode or tap a product to add it',
+                             'ar': 'امسح الباركود أو اختر منتجاً لإضافته'},
     'empty_cart':           {'en': 'Empty Cart',        'ar': 'السلة فارغة'},
     'empty_cart_msg':       {'en': 'Cart is empty.',    'ar': 'السلة فارغة.'},
     'save_as_debt':         {'en': 'Save as Debt',      'ar': 'حفظ كدَين'},

@@ -73,61 +73,194 @@ def _divider() -> QFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Inline ± quantity stepper  (replaces the ugly QSpinBox in cart rows)
+# Inline ± quantity stepper  (touch-friendly, one per cart line)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class _QtyWidget(QWidget):
     changed = pyqtSignal(int)
 
     _BTN = (
-        'QPushButton{background:#f1f5f9;border:1.5px solid #cbd5e1;'
-        'color:#374151;font-size:16px;font-weight:800;border-radius:8px;}'
-        'QPushButton:hover{background:#dde6f5;color:#1a73e8;border-color:#1a73e8;}'
-        'QPushButton:pressed{background:#c7d7f4;}'
+        'QPushButton{background:#ffffff;border:1.5px solid #cbd5e1;'
+        'color:#374151;font-size:15px;font-weight:800;border-radius:8px;}'
+        'QPushButton:hover{background:#eff6ff;color:#1a73e8;border-color:#1a73e8;}'
+        'QPushButton:pressed{background:#dbeafe;}'
+        'QPushButton:disabled{color:#cbd5e1;background:#f8fafc;border-color:#e2e8f0;}'
     )
 
     def __init__(self, value: int = 1, parent=None):
         super().__init__(parent)
-        self._val = value
+        # Keep − value + order identical in RTL — a mirrored "+ 1 −" confuses
+        self.setLayoutDirection(Qt.LeftToRight)
+        self._val = max(int(value), 1)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(4, 4, 4, 4)
-        lay.setSpacing(2)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(3)
 
         self._btn_m = QPushButton('−')
-        self._btn_m.setFixedSize(24, 24)
+        self._btn_m.setFixedSize(26, 26)
         self._btn_m.setStyleSheet(self._BTN)
+        self._btn_m.setCursor(Qt.PointingHandCursor)
+        self._btn_m.setFocusPolicy(Qt.NoFocus)
         self._btn_m.clicked.connect(self._dec)
 
-        self._lbl = QLabel(str(value))
+        self._lbl = QLabel(str(self._val))
         self._lbl.setAlignment(Qt.AlignCenter)
-        self._lbl.setFixedSize(30, 24)
+        self._lbl.setFixedSize(34, 26)
         self._lbl.setStyleSheet(
-            'font-size:13px;font-weight:800;color:#1e293b;background:#fff;'
-            'border-top:1.5px solid #cbd5e1;border-bottom:1.5px solid #cbd5e1;'
+            'font-size:13px;font-weight:800;color:#1e293b;background:transparent;'
         )
 
         self._btn_p = QPushButton('+')
-        self._btn_p.setFixedSize(24, 24)
+        self._btn_p.setFixedSize(26, 26)
         self._btn_p.setStyleSheet(self._BTN)
+        self._btn_p.setCursor(Qt.PointingHandCursor)
+        self._btn_p.setFocusPolicy(Qt.NoFocus)
         self._btn_p.clicked.connect(self._inc)
 
         lay.addWidget(self._btn_m)
         lay.addWidget(self._lbl)
         lay.addWidget(self._btn_p)
+        self._sync()
 
     def value(self) -> int:
         return self._val
 
+    def set_value(self, value: int):
+        """Set the displayed value programmatically (no signal)."""
+        self._val = max(int(value), 1)
+        self._lbl.setText(str(self._val))
+        self._sync()
+
+    def _sync(self):
+        """Disable '−' at 1 — removing a line is the × button's job."""
+        self._btn_m.setEnabled(self._val > 1)
+
     def _inc(self):
         self._val += 1
         self._lbl.setText(str(self._val))
+        self._sync()
         self.changed.emit(self._val)
 
     def _dec(self):
         if self._val > 1:
             self._val -= 1
             self._lbl.setText(str(self._val))
+            self._sync()
             self.changed.emit(self._val)
+
+
+class _IconBtn(QPushButton):
+    """Flat icon button whose icon colour changes on hover."""
+
+    def __init__(self, icon_name: str, idle: str, hover: str,
+                 size: int = 30, parent=None):
+        super().__init__(parent)
+        self._icon_name = icon_name
+        self._idle, self._hover = idle, hover
+        self.setFixedSize(size, size)
+        self.setIconSize(QtCore.QSize(size - 14, size - 14))
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setStyleSheet(
+            'QPushButton{background:transparent;border:none;border-radius:8px;}'
+            'QPushButton:hover{background:#fee2e2;}'
+        )
+        self._apply(idle)
+
+    def _apply(self, color: str):
+        self.setIcon(qta.icon(self._icon_name, color=color))
+
+    def enterEvent(self, e):
+        self._apply(self._hover)
+        super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        self._apply(self._idle)
+        super().leaveEvent(e)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cart line card  (name + unit price · ± stepper · line total · remove)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _CartItemCard(QFrame):
+    qty_changed = pyqtSignal(int, int)   # product_id, new qty
+    removed     = pyqtSignal(int)        # product_id
+
+    def __init__(self, product, qty: int, cur: str, parent=None):
+        super().__init__(parent)
+        self.product = product
+        self._cur = cur
+        self._qty = max(int(qty), 1)
+        self.setObjectName('CartItem')
+        self.setStyleSheet(
+            'QFrame#CartItem{background:#f8fafc;'
+            'border:1px solid #eef2f7;border-radius:12px;}'
+            'QFrame#CartItem:hover{background:#f0f7ff;border-color:#dbeafe;}'
+        )
+
+        price = float(getattr(product, 'price', 0) or 0)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(12, 8, 8, 8)
+        outer.setSpacing(6)
+
+        # line 1 — product name … remove button
+        top = QHBoxLayout()
+        top.setSpacing(8)
+        name = QLabel(product.name or '')
+        name.setWordWrap(True)
+        name.setStyleSheet(
+            f'color:{_DARK};font-size:14px;font-weight:700;'
+            'background:transparent;border:none;'
+        )
+        top.addWidget(name, 1)
+        del_btn = _IconBtn('fa5s.times', idle='#94a3b8', hover='#ef4444')
+        del_btn.setToolTip(tr('btn_delete'))
+        del_btn.clicked.connect(lambda: self.removed.emit(self.product.id))
+        top.addWidget(del_btn, 0, Qt.AlignTop)
+        outer.addLayout(top)
+
+        # line 2 — unit price × stepper …… line total
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+        price_lbl = QLabel(f'{price:,.2f} {cur}')
+        price_lbl.setStyleSheet(
+            f'color:{_SLATE};font-size:12px;font-weight:600;'
+            'background:transparent;border:none;'
+        )
+        bottom.addWidget(price_lbl)
+
+        times = QLabel('×')
+        times.setStyleSheet(
+            f'color:{_SLATE};font-size:12px;background:transparent;border:none;'
+        )
+        bottom.addWidget(times)
+
+        stepper = _QtyWidget(qty)
+        stepper.changed.connect(
+            lambda v: self.qty_changed.emit(self.product.id, v)
+        )
+        bottom.addWidget(stepper)
+        self._stepper = stepper
+        bottom.addStretch(1)
+
+        total = QLabel(f'{price * qty:,.2f} {cur}')
+        total.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        total.setStyleSheet(
+            f'color:{_DARK};font-size:13px;font-weight:800;'
+            'background:transparent;border:none;'
+        )
+        bottom.addWidget(total)
+        self._total = total
+        outer.addLayout(bottom)
+
+    def set_quantity(self, qty: int):
+        """Update stepper + line total in place (no rebuild, keeps scroll)."""
+        self._qty = max(int(qty), 1)
+        price = float(getattr(self.product, 'price', 0) or 0)
+        self._stepper.set_value(self._qty)
+        self._total.setText(f'{price * self._qty:,.2f} {self._cur}')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -569,73 +702,108 @@ class SalesView(QWidget):
 
         return card
 
-    # ── Cart table ─────────────────────────────────────────────────────────────
+    # ── Cart panel ─────────────────────────────────────────────────────────────
 
     def _build_cart(self) -> QFrame:
         panel = _card_frame()
         lay = QVBoxLayout(panel)
-        lay.setContentsMargins(16, 14, 16, 12)
+        lay.setContentsMargins(16, 14, 16, 14)
         lay.setSpacing(10)
 
-        # Header
+        # ── Header: icon tile + title + count pill + clear button ─────────────
         hdr = QHBoxLayout()
-        hdr.setSpacing(12)
-        self.cart_title = _section_label(tr('cart'))
-        self.cart_count_lbl = QLabel('0 items')
-        self.cart_count_lbl.setStyleSheet(
-            f'background:{_BLUE};color:#fff;border-radius:12px;'
-            'padding:6px 16px;font-size:13px;font-weight:700;'
+        hdr.setSpacing(10)
+
+        icon_tile = QLabel()
+        icon_tile.setPixmap(
+            qta.icon('fa5s.shopping-cart', color='#ffffff').pixmap(18, 18)
         )
-        self.btn_clear = QPushButton('Clear Cart')
+        icon_tile.setFixedSize(34, 34)
+        icon_tile.setAlignment(Qt.AlignCenter)
+        icon_tile.setStyleSheet(f'background:{_BLUE};border:none;border-radius:10px;')
+        hdr.addWidget(icon_tile)
+
+        self.cart_title = _section_label(tr('cart'))
+        hdr.addWidget(self.cart_title)
+
+        self.cart_count_lbl = QLabel('0')
+        self.cart_count_lbl.setAlignment(Qt.AlignCenter)
+        self.cart_count_lbl.setToolTip(tr('cart'))
+        self.cart_count_lbl.setStyleSheet(
+            f'background:#eff6ff;color:{_BLUE};border:none;'
+            'border-radius:12px;padding:5px 14px;font-size:13px;font-weight:800;'
+        )
+        hdr.addWidget(self.cart_count_lbl)
+        hdr.addStretch()
+
+        self.btn_clear = QPushButton(f'  {tr("btn_clear_cart")}')
+        self.btn_clear.setIcon(qta.icon('fa5s.trash-alt', color='#ef4444'))
+        self.btn_clear.setIconSize(QtCore.QSize(15, 15))
         self.btn_clear.setFixedHeight(38)
+        self.btn_clear.setCursor(Qt.PointingHandCursor)
         self.btn_clear.setStyleSheet(
             'QPushButton{background:transparent;color:#ef4444;'
             'border:2px solid #fca5a5;border-radius:10px;'
-            'padding:0 20px;font-size:14px;font-weight:700;}'
+            'padding:0 16px;font-size:13px;font-weight:700;}'
             'QPushButton:hover{background:#fef2f2;border-color:#ef4444;}'
         )
         self.btn_clear.clicked.connect(self._clear_cart)
-        hdr.addWidget(self.cart_title)
-        hdr.addWidget(self.cart_count_lbl)
-        hdr.addStretch()
         hdr.addWidget(self.btn_clear)
         lay.addLayout(hdr)
 
-        # 5 columns: Product | Unit Price | Qty (±) | Total | ×
-        self.cart_table = QTableWidget(0, 5)
-        self.cart_table.setHorizontalHeaderLabels(
-            ['Product', 'Unit Price', 'Qty', 'Total', '']
+        # ── Scrollable card list ──────────────────────────────────────────────
+        self._cart_scroll = QScrollArea()
+        self._cart_scroll.setWidgetResizable(True)
+        self._cart_scroll.setFrameShape(QFrame.NoFrame)
+        self._cart_scroll.setStyleSheet(
+            'QScrollArea{background:transparent;border:none;}'
+            'QScrollBar:vertical{background:transparent;width:8px;margin:2px;}'
+            'QScrollBar::handle:vertical{background:#dbe3ef;border-radius:4px;'
+            'min-height:30px;}'
+            'QScrollBar::handle:vertical:hover{background:#cbd5e1;}'
+            'QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;}'
+            'QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical'
+            '{background:transparent;}'
         )
-        self.cart_table.verticalHeader().setVisible(False)
-        self.cart_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.cart_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.cart_table.setShowGrid(False)
-        self.cart_table.setAlternatingRowColors(True)
-        self.cart_table.setStyleSheet(
-            'QTableWidget{border:none;background:#fff;outline:none;}'
-            'QTableWidget::item{padding:8px 12px;font-size:14px;}'
-            'QTableWidget::item:alternate{background:#f8fafc;}'
-            'QTableWidget::item:selected{background:#eff6ff;color:#1e293b;}'
-            'QHeaderView::section{background:#f1f5f9;border:none;'
-            'padding:12px 12px;font-size:13px;font-weight:700;color:#64748b;'
-            'text-transform:uppercase;letter-spacing:0.5px;'
-            'border-bottom:2px solid #e2e8f0;}'
-        )
+        self._cart_list = QWidget()
+        self._cart_list.setObjectName('CartList')
+        self._cart_list.setStyleSheet('QWidget#CartList{background:transparent;}')
+        self._cart_lay = QVBoxLayout(self._cart_list)
+        self._cart_lay.setContentsMargins(0, 0, 2, 0)
+        self._cart_lay.setSpacing(8)
+        self._cart_lay.addStretch(1)
+        self._cart_scroll.setWidget(self._cart_list)
+        lay.addWidget(self._cart_scroll, 1)
 
-        hh = self.cart_table.horizontalHeader()
-        hh.setSectionResizeMode(0, QHeaderView.Stretch)
-        hh.setSectionResizeMode(1, QHeaderView.Fixed)
-        self.cart_table.setColumnWidth(1, 120)
-        hh.setSectionResizeMode(2, QHeaderView.Fixed)
-        self.cart_table.setColumnWidth(2, 100)
-        hh.setSectionResizeMode(3, QHeaderView.Fixed)
-        self.cart_table.setColumnWidth(3, 120)
-        hh.setSectionResizeMode(4, QHeaderView.Fixed)
-        self.cart_table.setColumnWidth(4, 38)
-        self.cart_table.verticalHeader().setDefaultSectionSize(40)
-
-        lay.addWidget(self.cart_table, 1)
         return panel
+
+    def _make_empty_state(self) -> QWidget:
+        """Placeholder shown when the cart has no lines."""
+        box = QWidget()
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(24, 40, 24, 40)
+        lay.setSpacing(10)
+
+        icon = QLabel()
+        icon.setPixmap(qta.icon('fa5s.shopping-cart', color='#cbd5e1').pixmap(44, 44))
+        icon.setAlignment(Qt.AlignCenter)
+        icon.setStyleSheet('background:transparent;border:none;')
+        lay.addWidget(icon)
+
+        title = QLabel(tr('empty_cart_msg'))
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(
+            f'color:{_SLATE};font-size:14px;font-weight:700;'
+            'background:transparent;border:none;'
+        )
+        lay.addWidget(title)
+
+        hint = QLabel(tr('cart_empty_hint'))
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setWordWrap(True)
+        hint.setStyleSheet('color:#94a3b8;font-size:12px;background:transparent;border:none;')
+        lay.addWidget(hint)
+        return box
 
     # ── Checkout panel — Order Summary ─────────────────────────────────────────
 
@@ -1205,58 +1373,51 @@ class SalesView(QWidget):
 
     def refresh_cart(self):
         cart = self.sales_controller.cart
-        self.cart_table.setRowCount(0)
 
-        for item in cart:
-            p   = item['product']
-            qty = item['quantity']
-            r   = self.cart_table.rowCount()
-            self.cart_table.insertRow(r)
-            self.cart_table.setRowHeight(r, 56)
+        # remember scroll position — editing an item halfway down the list
+        # shouldn't snap the view back to the top
+        bar = self._cart_scroll.verticalScrollBar()
+        scroll_pos = bar.value()
 
-            # Col 0: Product name
-            name_item = QTableWidgetItem(p.name)
-            name_item.setData(Qt.UserRole, p.id)
-            self.cart_table.setItem(r, 0, name_item)
+        # wipe previous cards / empty state
+        while self._cart_lay.count():
+            lay_item = self._cart_lay.takeAt(0)
+            wdg = lay_item.widget()
+            if wdg:
+                wdg.setParent(None)   # vanish immediately, not on next loop pass
+                wdg.deleteLater()
 
-            # Col 1: Unit price
-            price = float(getattr(p, 'price', 0) or 0)
-            price_item = QTableWidgetItem(f'{price:,.2f}')
-            price_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.cart_table.setItem(r, 1, price_item)
+        cur = _currency()
+        if not cart:
+            self._cart_lay.addWidget(self._make_empty_state())
+        else:
+            for entry in cart:
+                card = _CartItemCard(entry['product'], entry['quantity'], cur)
+                card.qty_changed.connect(self._on_qty_change)
+                card.removed.connect(self._on_delete)
+                self._cart_lay.addWidget(card)
+        self._cart_lay.addStretch(1)
+        # force geometry NOW so the scrollbar range is valid before restoring
+        self._cart_lay.activate()
+        self._cart_list.adjustSize()
+        QtCore.QTimer.singleShot(
+            0, lambda: bar.setValue(min(scroll_pos, bar.maximum()))
+        )
 
-            # Col 2: ± qty stepper
-            qty_w = _QtyWidget(qty)
-            qty_w.changed.connect(
-                lambda val, pid=p.id: self._on_qty_change(pid, val)
-            )
-            self.cart_table.setCellWidget(r, 2, qty_w)
+        # count badge — number of distinct lines (matches summary badge style)
+        self.cart_count_lbl.setText(str(len(cart)))
+        self._refresh_totals()
 
-            # Col 3: Row subtotal
-            sub_item = QTableWidgetItem(f'{price * qty:,.2f}')
-            sub_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.cart_table.setItem(r, 3, sub_item)
+    def _iter_cart_cards(self):
+        """Yield the _CartItemCard widgets currently in the list."""
+        for i in range(self._cart_lay.count()):
+            w = self._cart_lay.itemAt(i).widget()
+            if isinstance(w, _CartItemCard):
+                yield w
 
-            # Col 4: Delete button — fills cell naturally, styled flat
-            del_btn = QPushButton()
-            del_btn.setIcon(qta.icon('fa5s.times', color='#94a3b8'))
-            del_btn.setIconSize(QtCore.QSize(16, 16))
-            del_btn.setCursor(Qt.PointingHandCursor)
-            del_btn.setStyleSheet(
-                'QPushButton{background:transparent;border:none;border-radius:6px;}'
-                'QPushButton:hover{background:#fee2e2;}'
-                'QPushButton:hover QIcon{color:#ef4444;}'
-            )
-            del_btn.clicked.connect(
-                lambda _, pid=p.id: self._on_delete(pid)
-            )
-            self.cart_table.setCellWidget(r, 4, del_btn)
-
-        # Count badge
-        n = len(cart)
-        self.cart_count_lbl.setText(f'{n} item{"s" if n != 1 else ""}')
-
-        # Totals
+    def _refresh_totals(self):
+        """Recompute totals; sync summary panel, paid input and card badges."""
+        n   = len(self.sales_controller.cart)
         t   = self._compute_totals()
         cur = _currency()
         self.lbl_sub.setText(f'{t["subtotal"]:,.2f} {cur}')
@@ -1318,7 +1479,14 @@ class SalesView(QWidget):
             self.sales_controller.change_quantity(product_id, value)
         except Exception as e:
             QMessageBox.warning(self, 'Error', str(e))
-        self.refresh_cart()
+            self.refresh_cart()   # resync card UI with the real cart state
+            return
+        # in-place card update — no rebuild, so scroll & focus stay put
+        for card in self._iter_cart_cards():
+            if card.product.id == product_id:
+                card.set_quantity(value)
+                break
+        self._refresh_totals()
 
     def _on_delete(self, product_id: int):
         self.sales_controller.remove_item(product_id)
@@ -1481,6 +1649,7 @@ class SalesView(QWidget):
 
     def retranslate_ui(self, lang=None):
         self.cart_title.setText(tr('cart'))
+        self.btn_clear.setText(f"  {tr('btn_clear_cart')}")
 
         # ── Order summary panel ──────────────────────────────────────────────
         self._sum_title.setText(tr('order_summary'))
