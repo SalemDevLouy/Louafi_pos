@@ -61,7 +61,10 @@ def _card_frame(parent=None) -> QFrame:
 def _section_label(text: str) -> QLabel:
     lbl = QLabel(text)
     lbl.setObjectName('section_title')
-    lbl.setStyleSheet('font-size:18px;font-weight:800;color:#1e293b;')
+    lbl.setStyleSheet(
+        'font-size:18px;font-weight:800;color:#1e293b;'
+        'background:transparent;border:none;'
+    )
     return lbl
 
 
@@ -87,11 +90,15 @@ class _QtyWidget(QWidget):
         'QPushButton:disabled{color:#cbd5e1;background:#f8fafc;border-color:#e2e8f0;}'
     )
 
-    def __init__(self, value: int = 1, parent=None):
+    def __init__(self, value: int = 1, max_value: int | None = None,
+                 parent=None):
         super().__init__(parent)
         # Keep − value + order identical in RTL — a mirrored "+ 1 −" confuses
         self.setLayoutDirection(Qt.LeftToRight)
+        self._max = max_value if (max_value is None or max_value > 0) else None
         self._val = max(int(value), 1)
+        if self._max is not None:
+            self._val = min(self._val, self._max)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(3)
@@ -128,14 +135,27 @@ class _QtyWidget(QWidget):
     def set_value(self, value: int):
         """Set the displayed value programmatically (no signal)."""
         self._val = max(int(value), 1)
+        if self._max is not None:
+            self._val = min(self._val, self._max)
         self._lbl.setText(str(self._val))
+        self._sync()
+
+    def set_max(self, max_value: int | None):
+        """Update the stock ceiling (no signal)."""
+        self._max = max_value if (max_value is None or max_value > 0) else None
+        if self._max is not None and self._val > self._max:
+            self._val = self._max
+            self._lbl.setText(str(self._val))
         self._sync()
 
     def _sync(self):
         """Disable '−' at 1 — removing a line is the × button's job."""
         self._btn_m.setEnabled(self._val > 1)
+        self._btn_p.setEnabled(self._max is None or self._val < self._max)
 
     def _inc(self):
+        if self._max is not None and self._val >= self._max:
+            return
         self._val += 1
         self._lbl.setText(str(self._val))
         self._sync()
@@ -193,73 +213,118 @@ class _CartItemCard(QFrame):
         self._cur = cur
         self._qty = max(int(qty), 1)
         self.setObjectName('CartItem')
+        self.setAttribute(Qt.WA_StyledBackground, True)
         self.setStyleSheet(
-            'QFrame#CartItem{background:#f8fafc;'
-            'border:1px solid #eef2f7;border-radius:12px;}'
-            'QFrame#CartItem:hover{background:#f0f7ff;border-color:#dbeafe;}'
+            'QFrame#CartItem{background:#ffffff;'
+            'border:1px solid #e8eef6;border-radius:14px;}'
+            'QFrame#CartItem:hover{background:#f7faff;border-color:#bfdbfe;}'
         )
 
         price = float(getattr(product, 'price', 0) or 0)
+        stock = int(getattr(product, 'quantity', 0) or 0)
+        name_txt = (getattr(product, 'name', '') or '').strip() or '—'
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(12, 8, 8, 8)
-        outer.setSpacing(6)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(12, 10, 10, 10)
+        outer.setSpacing(10)
 
-        # line 1 — product name … remove button
-        top = QHBoxLayout()
-        top.setSpacing(8)
-        name = QLabel(product.name or '')
+        # Avatar tile — product initial
+        initial = name_txt[0].upper()
+        avatar = QLabel(initial)
+        avatar.setFixedSize(40, 40)
+        avatar.setAlignment(Qt.AlignCenter)
+        avatar.setStyleSheet(
+            'background:#eff6ff;color:#1a73e8;border:none;border-radius:10px;'
+            'font-size:17px;font-weight:800;'
+        )
+        outer.addWidget(avatar, 0, Qt.AlignTop)
+
+        # Middle column: name … unit price × stepper … stock hint
+        mid = QVBoxLayout()
+        mid.setContentsMargins(0, 0, 0, 0)
+        mid.setSpacing(5)
+
+        name = QLabel(name_txt)
         name.setWordWrap(True)
         name.setStyleSheet(
             f'color:{_DARK};font-size:14px;font-weight:700;'
             'background:transparent;border:none;'
         )
-        top.addWidget(name, 1)
-        del_btn = _IconBtn('fa5s.times', idle='#94a3b8', hover='#ef4444')
-        del_btn.setToolTip(tr('btn_delete'))
-        del_btn.clicked.connect(lambda: self.removed.emit(self.product.id))
-        top.addWidget(del_btn, 0, Qt.AlignTop)
-        outer.addLayout(top)
+        mid.addWidget(name)
 
-        # line 2 — unit price × stepper …… line total
-        bottom = QHBoxLayout()
-        bottom.setSpacing(8)
+        qty_row = QHBoxLayout()
+        qty_row.setContentsMargins(0, 0, 0, 0)
+        qty_row.setSpacing(6)
+
         price_lbl = QLabel(f'{price:,.2f} {cur}')
         price_lbl.setStyleSheet(
             f'color:{_SLATE};font-size:12px;font-weight:600;'
             'background:transparent;border:none;'
         )
-        bottom.addWidget(price_lbl)
+        qty_row.addWidget(price_lbl)
 
-        times = QLabel('×')
-        times.setStyleSheet(
-            f'color:{_SLATE};font-size:12px;background:transparent;border:none;'
-        )
-        bottom.addWidget(times)
-
-        stepper = _QtyWidget(qty)
+        stepper = _QtyWidget(self._qty, max_value=stock)
         stepper.changed.connect(
             lambda v: self.qty_changed.emit(self.product.id, v)
         )
-        bottom.addWidget(stepper)
+        qty_row.addWidget(stepper)
         self._stepper = stepper
-        bottom.addStretch(1)
+        qty_row.addStretch(1)
+        mid.addLayout(qty_row)
 
-        total = QLabel(f'{price * qty:,.2f} {cur}')
-        total.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._stock_hint = QLabel()
+        self._stock_hint.setStyleSheet(
+            'background:transparent;border:none;'
+            'color:#94a3b8;font-size:11px;font-weight:600;'
+        )
+        mid.addWidget(self._stock_hint)
+        outer.addLayout(mid, 1)
+
+        # Right column: remove + line total
+        right = QVBoxLayout()
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(6)
+        del_btn = _IconBtn('fa5s.times', idle='#94a3b8', hover='#ef4444')
+        del_btn.setToolTip(tr('btn_delete'))
+        del_btn.clicked.connect(lambda: self.removed.emit(self.product.id))
+        right.addWidget(del_btn, 0, Qt.AlignRight)
+
+        right.addStretch(1)
+
+        total = QLabel()
+        total.setAlignment(Qt.AlignRight | Qt.AlignBottom)
         total.setStyleSheet(
-            f'color:{_DARK};font-size:13px;font-weight:800;'
+            f'color:{_DARK};font-size:14px;font-weight:800;'
             'background:transparent;border:none;'
         )
-        bottom.addWidget(total)
+        right.addWidget(total)
         self._total = total
-        outer.addLayout(bottom)
+        outer.addLayout(right)
+
+        self.set_quantity(self._qty)
+        self._refresh_stock_hint()
+
+    def _refresh_stock_hint(self):
+        stock = int(getattr(self.product, 'quantity', 0) or 0)
+        if 0 < stock <= 5:
+            self._stock_hint.setText(tr('only_x_left', n=stock))
+            self._stock_hint.setStyleSheet(
+                'background:transparent;border:none;'
+                'color:#dc2626;font-size:11px;font-weight:700;'
+            )
+            self._stock_hint.setVisible(True)
+        else:
+            self._stock_hint.setVisible(False)
 
     def set_quantity(self, qty: int):
         """Update stepper + line total in place (no rebuild, keeps scroll)."""
         self._qty = max(int(qty), 1)
         price = float(getattr(self.product, 'price', 0) or 0)
+        stock = int(getattr(self.product, 'quantity', 0) or 0)
+        self._stepper.blockSignals(True)
         self._stepper.set_value(self._qty)
+        self._stepper.set_max(stock)
+        self._stepper.blockSignals(False)
         self._total.setText(f'{price * self._qty:,.2f} {self._cur}')
 
 
@@ -710,9 +775,9 @@ class SalesView(QWidget):
         lay.setContentsMargins(16, 14, 16, 14)
         lay.setSpacing(10)
 
-        # ── Header: icon tile + title + count pill + clear button ─────────────
+        # ── Header row 1: icon tile + title + count pill + clear button ─────────
         hdr = QHBoxLayout()
-        hdr.setSpacing(10)
+        hdr.setSpacing(8)
 
         icon_tile = QLabel()
         icon_tile.setPixmap(
@@ -734,9 +799,9 @@ class SalesView(QWidget):
             'border-radius:12px;padding:5px 14px;font-size:13px;font-weight:800;'
         )
         hdr.addWidget(self.cart_count_lbl)
-        hdr.addStretch()
+        hdr.addStretch(1)
 
-        self.btn_clear = QPushButton(f'  {tr("btn_clear_cart")}')
+        self.btn_clear = QPushButton(tr('btn_clear_cart'))
         self.btn_clear.setIcon(qta.icon('fa5s.trash-alt', color='#ef4444'))
         self.btn_clear.setIconSize(QtCore.QSize(15, 15))
         self.btn_clear.setFixedHeight(38)
@@ -744,12 +809,23 @@ class SalesView(QWidget):
         self.btn_clear.setStyleSheet(
             'QPushButton{background:transparent;color:#ef4444;'
             'border:2px solid #fca5a5;border-radius:10px;'
-            'padding:0 16px;font-size:13px;font-weight:700;}'
+            'padding:0 14px;font-size:13px;font-weight:700;}'
             'QPushButton:hover{background:#fef2f2;border-color:#ef4444;}'
+            'QPushButton:disabled{color:#cbd5e1;border-color:#e2e8f0;background:transparent;}'
         )
         self.btn_clear.clicked.connect(self._clear_cart)
         hdr.addWidget(self.btn_clear)
         lay.addLayout(hdr)
+
+        # ── Header row 2: "N units" sub-label (own row — never squeezes buttons)
+        self._cart_sub_lbl = QLabel('')
+        self._cart_sub_lbl.setStyleSheet(
+            'background:transparent;border:none;'
+            'color:#94a3b8;font-size:12px;font-weight:600;'
+        )
+        lay.addWidget(self._cart_sub_lbl)
+
+        lay.addWidget(_divider())
 
         # ── Scrollable card list ──────────────────────────────────────────────
         self._cart_scroll = QScrollArea()
@@ -775,17 +851,42 @@ class SalesView(QWidget):
         self._cart_scroll.setWidget(self._cart_list)
         lay.addWidget(self._cart_scroll, 1)
 
+        # ── Footer: lines • units … subtotal ──────────────────────────────────
+        self._cart_foot = QFrame()
+        self._cart_foot.setStyleSheet(
+            'QFrame{background:#f8fafc;border:1px solid #eef2f7;border-radius:12px;}'
+        )
+        foot_lay = QHBoxLayout(self._cart_foot)
+        foot_lay.setContentsMargins(14, 8, 14, 8)
+        foot_lay.setSpacing(8)
+        self._cart_foot_lines = QLabel('')
+        self._cart_foot_lines.setStyleSheet(
+            f'background:transparent;border:none;color:{_SLATE};'
+            'font-size:12px;font-weight:700;'
+        )
+        foot_lay.addWidget(self._cart_foot_lines)
+        foot_lay.addStretch(1)
+        self._cart_foot_total = QLabel('')
+        self._cart_foot_total.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._cart_foot_total.setStyleSheet(
+            f'background:transparent;border:none;color:{_DARK};'
+            'font-size:14px;font-weight:800;'
+        )
+        foot_lay.addWidget(self._cart_foot_total)
+        lay.addWidget(self._cart_foot)
+
         return panel
 
     def _make_empty_state(self) -> QWidget:
         """Placeholder shown when the cart has no lines."""
         box = QWidget()
         lay = QVBoxLayout(box)
-        lay.setContentsMargins(24, 40, 24, 40)
+        lay.setContentsMargins(24, 24, 24, 24)
         lay.setSpacing(10)
+        lay.addStretch(1)
 
         icon = QLabel()
-        icon.setPixmap(qta.icon('fa5s.shopping-cart', color='#cbd5e1').pixmap(44, 44))
+        icon.setPixmap(qta.icon('fa5s.shopping-cart', color='#cbd5e1').pixmap(52, 52))
         icon.setAlignment(Qt.AlignCenter)
         icon.setStyleSheet('background:transparent;border:none;')
         lay.addWidget(icon)
@@ -803,6 +904,7 @@ class SalesView(QWidget):
         hint.setWordWrap(True)
         hint.setStyleSheet('color:#94a3b8;font-size:12px;background:transparent;border:none;')
         lay.addWidget(hint)
+        lay.addStretch(1)
         return box
 
     # ── Checkout panel — Order Summary ─────────────────────────────────────────
@@ -1404,8 +1506,27 @@ class SalesView(QWidget):
             0, lambda: bar.setValue(min(scroll_pos, bar.maximum()))
         )
 
-        # count badge — number of distinct lines (matches summary badge style)
+        # header badges — lines count + units sub-label
+        units = sum(int(i['quantity']) for i in cart)
         self.cart_count_lbl.setText(str(len(cart)))
+        self.cart_count_lbl.setToolTip(
+            tr('cart_tip_lines_units', lines=len(cart), units=units)
+        )
+        self._cart_sub_lbl.setText(
+            tr('cart_footer_units', n=units) if cart else ''
+        )
+        # footer strip — same counts + live subtotal
+        self._cart_foot_lines.setText(
+            tr('cart_tip_lines_units', lines=len(cart), units=units)
+            if cart else ''
+        )
+        t_foot = self._compute_totals()
+        self._cart_foot_total.setText(
+            f'{t_foot["subtotal"]:,.2f} {cur}' if cart else ''
+        )
+        self._cart_foot.setVisible(bool(cart))
+        self.btn_clear.setEnabled(bool(cart))
+        self.btn_clear.setToolTip(tr('btn_clear_cart'))
         self._refresh_totals()
 
     def _iter_cart_cards(self):
@@ -1649,7 +1770,9 @@ class SalesView(QWidget):
 
     def retranslate_ui(self, lang=None):
         self.cart_title.setText(tr('cart'))
-        self.btn_clear.setText(f"  {tr('btn_clear_cart')}")
+        self.btn_clear.setText(tr('btn_clear_cart'))
+        self.cart_count_lbl.setToolTip(tr('cart'))
+        self.btn_clear.setToolTip(tr('btn_clear_cart'))
 
         # ── Order summary panel ──────────────────────────────────────────────
         self._sum_title.setText(tr('order_summary'))

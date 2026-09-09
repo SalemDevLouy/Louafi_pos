@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import logging
 import os
+import sys
 import traceback
 import uuid
 from datetime import date, datetime
@@ -97,6 +98,24 @@ def _refresh_status(store_id: str, expiry: date) -> None:
 
 
 def _key_file_path() -> str:
+    # 1) CWD-relative — legacy behaviour; lets a per-folder key win
+    #    (this is also where license.key sits in a dev checkout).
+    if os.path.isfile(_KEY_FILE):
+        return _KEY_FILE
+    # 2) frozen bundle copy (PyInstaller onedir → <app>/_internal/license.key)
+    meipass = getattr(sys, '_MEIPASS', None)
+    if meipass:
+        bundled = os.path.join(meipass, 'license.key')
+        if os.path.isfile(bundled):
+            return bundled
+    # 3) source checkout fallback (independent of the working directory)
+    here = os.path.dirname(os.path.abspath(__file__))
+    for candidate in (
+        os.path.join(here, 'license.key'),
+        os.path.join(here, '..', 'license.key'),
+    ):
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
     return _KEY_FILE
 
 
